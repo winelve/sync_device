@@ -60,6 +60,3 @@ def scan_network_fast(is_local: bool = False) -> List[str]:
         print(f"  💻 {ip}")
     
     return devices
-
-# 直接调用获取设备列表
-device_list = scan_network_fast()

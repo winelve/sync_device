@@ -5,12 +5,15 @@ import time
 import threading
 import subprocess
 from enum import Enum
+import atexit
 
 from scan import scan_network_fast
 
 devices_ip = scan_network_fast(is_local=True) #扫描网段下的设备
 port = 8000
 tool = "k4arecorder"
+done_msg = "[subordinate mode] Waiting for signal from master" # 子设备初始化完成的标志
+datetime = ""
 
 CMD_DICT = {
     "--device" : None,
@@ -23,8 +26,10 @@ CMD_DICT = {
     "--external-sync": None,  # 同步的类型
     "--sync-delay": None, # 同步延迟
     "-e": None, # 曝光度
-    "--ip-devices": None #给出指定ip的设备
+    "--ip-devices": None, #给出指定ip的设备
+    "output": './', #输出路径
 }
+
 
 class CmdType(Enum):
     Standalone = 0
@@ -32,38 +37,58 @@ class CmdType(Enum):
     Sub = 2
 
 def parse_cmd(cmd_dict: Dict,cmd_type:CmdType,ip:str='') -> List[str]:
+    cmd_dict = cmd_dict.copy()
+    if cmd_dict.get("output", None) is None:
+        cmd_dict["output"] = "."
     if ip!='' and cmd_dict.get("--ip-devices",{}).get(ip,[]):
         cmd_dict["--device"] = cmd_dict["--ip-devices"][ip][0] #这边目前先取第一个设备
-    cmdpack = [[k,v] for k,v in cmd_dict.items() if v is not None]
+    cmdpack = [[k,v] for k,v in cmd_dict.items() if (v is not None) and (k != "--ip-devices") and (k != "output")]
     cmdList = [tool]
-    
+
+    global datetime
     if cmd_type == CmdType.Master:
+        output_file = f'{cmd_dict["output"]}/master-{datetime}.mkv'
+        cmdList.append("--external-sync")
+        cmdList.append("master")
         for pack in cmdpack:
-            if pack[0] != "--sync-delay":
+            if pack[0] == "--sync-delay":
                 continue
             cmdList.append(pack[0])
-            cmdList.append(pack[1])
+            cmdList.append(str(pack[1]))
+        cmdList.append(output_file)
         return cmdList
     elif cmd_type == CmdType.Sub: 
+        output_file = f'{cmd_dict["output"]}/sub-{datetime}.mkv'
+        cmdList.append("--external-sync")
+        cmdList.append("subordinate")
         for pack in cmdpack:
             cmdList.append(pack[0])
-            cmdList.append(pack[1])
+            cmdList.append(str(pack[1]))
+        cmdList.append(output_file)
         return cmdList
     elif cmd_type == CmdType.Standalone:
+        output_file = f'{cmd_dict["output"]}/{datetime}.mkv'
         for pack in cmdpack:
             if pack[0] == "--sync-delay" :
                 continue
             if pack[0] == "--external-sync":
                 continue
             cmdList.append(pack[0])
-            cmdList.append(pack[1])
+            cmdList.append(str(pack[1]))
+        cmdList.append(output_file)
         return cmdList
     return []
 
-
+def update_global_datetime():
+    global datetime
+    datetime = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
 
 class Master:
     def __init__(self):
+        atexit.register(self._cleanup)
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        
         #master进程
         self.process = None
         self.done_count = 0
@@ -80,10 +105,25 @@ class Master:
         
         # 启动输出监听线程
         self.output_thread = threading.Thread(target=self._monitor_outputs, daemon=True)
+        
+    def start_in_standalone_mode(self, cmdDict: Dict):
+        update_global_datetime()
+        self._print_cmd_info(cmdDict, is_sync=False)
+        # 启动子进程
+        self.process = subprocess.Popen(
+            parse_cmd(cmdDict, CmdType.Standalone),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            bufsize=1
+        )
+        
 
-    def start_all(self, cmdDict: List[str]):
+    def start_in_sync_mode(self, cmdDict: List[str]):
+        update_global_datetime()
+        self._print_cmd_info(cmdDict, is_sync=True)
         #启动子进程
-        self._start_sub(cmdDict, CmdType.Sub)
+        self._start_sub(cmdDict)
         # 启动监听线程
         self.running = True
         self.output_thread.start()
@@ -91,7 +131,7 @@ class Master:
         #确保设备全部初始化
         self._waiting_for_device_init()
         # 启动master进程
-        self._start_master(cmdDict, CmdType.Master)
+        self._start_master(cmdDict)
         
     def _waiting_for_device_init(self):
         while 1:
@@ -103,14 +143,15 @@ class Master:
     def _monitor_outputs(self):
         """后台线程监听所有worker输出"""
         while self.running:
-            try:
+            try:            
+                # 监听所有worker输出
                 for i, (worker, ip) in enumerate(zip(self.workers,self.devices_ip)):
                     outputs = worker.get_outputs()
                     for output in outputs:
                         timestamp = time.strftime("%H:%M:%S", time.localtime())
                         print(f"[{timestamp}] Worker{i}({ip}) >> {output}")
                         #统计已经初始化完成的设备数量
-                        if 'Done' in output:
+                        if done_msg in output:
                             self.done_count += 1
                 time.sleep(1)  # 避免过于频繁的轮询
             except Exception as e:
@@ -146,42 +187,106 @@ class Master:
             text=True,
             bufsize=1
         )
+        print("master启动")
+        print(f'master运行命令: {parse_cmd(cmd_dict, CmdType.Master)}')
+        
+    def _print_cmd_info(self, cmd_dict: dict, is_sync:bool):
+        """打印录制配置信息"""
+        config_items = []
+        
+        # 配置映射表
+        config_map = {
+            "--device": ("📱 设备", ""),
+            "-l": ("⏱️  录制时长", "秒"),
+            "-c": ("🎥 色彩模式", ""),
+            "-d": ("📷 深度模式", ""),
+            "--depth-delay": ("⏰ 深度延迟", "μs"),
+            "-r": ("🎬 帧率", "fps"),
+            "--imu": ("🧭 IMU", ""),
+            "--external-sync": ("🔗 外部同步", ""),
+            "--sync-delay": ("⏳ 同步延迟", "μs"),
+            "-e": ("💡 曝光控制", ""),
+            "--ip-devices": ("🌐 IP设备", ""),
+            "output": ("📁 输出路径", "")
+        }
+        
+        # 收集有效配置
+        for key, (label, unit) in config_map.items():
+            value = cmd_dict.get(key)
+            if value is not None:
+                display_value = f"{value} {unit}".strip()
+                config_items.append(f"  {label}: {display_value}")
+        
+        # 输出格式化信息
+        if config_items:
+            print("\n┌─ 📋 录制配置信息 ─" + "─" * 20)
+            if is_sync:
+                print("  🔗 Sync模式")
+            else:
+                print("  🔗 Standalone模式")
+                
+            for item in config_items:
+                print(item)
+            print("└─" + "─" * 32)
+        else:
+            print("📋 当前无有效配置信息")
+        
+    def _signal_handler(self, signum, frame):
+        """处理信号"""
+        print(f"\n收到信号 {signum}，正在清理...")
+        self._cleanup()
+        exit(0)
+    def _cleanup(self):
+        """清理资源"""
+        try:
+            # 停止master进程
+            if hasattr(self, 'process') and self.process and self.process.poll() is None:
+                self.process.terminate()
+                # 等待一下，如果还没结束就强制杀死
+                try:
+                    self.process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+                    self.process.wait()
+                print("Master进程已停止")
+            
+            self.running = False
+            if self.output_thread.is_alive():
+                self.output_thread.join()
+                    
+        except Exception as e:
+            print(f"清理过程中出错: {e}")
         
                 
 if __name__ == "__main__":
-    # 使用示例
-    master = Master()
-    
     cmd_d = {
         "--device" : 0,
         "-l" : 5,    # record length
         "-c" : "720p",    # color-mode(分辨率)
-        "-d" : None,    # depth-mode(深度相机的模式)
-        "--depth-delay": None,  # depth-delay
+        # "-d" : "NFOV_2X2BINNED",    # depth-mode(深度相机的模式)
+        # "--depth-delay": 50,  # depth-delay
         "-r": 15,    # rate
         "--imu": "OFF", # imu
         "--external-sync": None,  # 同步的类型
-        "--sync-delay": None, # 同步延迟
-        "-e": 8, # 曝光度
+        "--sync-delay": 200, # 同步延迟
+        "-e": -8, # 曝光度
         "--ip-devices": {
             "127.0.0.1": [1]
-        }
+        },
+        "output": "./output/recording"  # 输出路径
     }
+    master = Master()
     
-    master.start_all(cmd_d)
-
     try:
-        # 主循环
+        # master.start_in_sync_mode(cmd_d)
+        master.start_in_standalone_mode(cmd_d)
+        # 主线程等待，让程序保持运行
         while True:
-            # 发送命令
-            cmd = input("输入命令 (或q退出): ")
-            if cmd == 'q':
-                master.stop_master()
+            if master.process and master.process.poll() is not None:
+                # master进程结束了
                 break
-    except KeyboardInterrupt:
-        print("\n正在退出...")
-        master.stop_master()
+            time.sleep(1)
+    except Exception as e:
+        print(f"运行出错: {e}")
     finally:
-        # 清理资源
-        master.stop_monitoring()
-    
+        master._cleanup()
