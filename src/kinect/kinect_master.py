@@ -13,7 +13,8 @@ from scan import scan_network_fast
 # 全局变量 || 配置参数
 # devices_ip = scan_network_fast(is_local=True) #扫描网段下的设备
 port = 8000
-tool = "k4arecorder"
+tool = "./src/kinect/tool/k4arecorder"
+print(tool)
 done_msg = "[subordinate mode] Waiting for signal from master" # 子设备初始化完成的标志
 datetime = ""
 config_list = ["--device", "-l", "-c", "-d", "--depth-delay", "-r", "--imu", "--external-sync", "--sync-delay", "-e", "--ip-devices", "output"]
