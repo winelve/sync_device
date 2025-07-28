@@ -10,6 +10,7 @@ from scan import scan_network_fast
 
 devices_ip = scan_network_fast(is_local=True) #扫描网段下的设备
 port = 8000
+tool = "k4arecorder"
 
 CMD_DICT = {
     "--device" : None,
@@ -21,7 +22,8 @@ CMD_DICT = {
     "--imu": None, # imu
     "--external-sync": None,  # 同步的类型
     "--sync-delay": None, # 同步延迟
-    "-e": None # 曝光度
+    "-e": None, # 曝光度
+    "--ip-devices": None #给出指定ip的设备
 }
 
 class CmdType(Enum):
@@ -29,9 +31,12 @@ class CmdType(Enum):
     Master = 1
     Sub = 2
 
-def parse_cmd(cmd_dict: Dict,cmd_type:CmdType) -> List[str]:
+def parse_cmd(cmd_dict: Dict,cmd_type:CmdType,ip:str='') -> List[str]:
+    if ip!='' and cmd_dict.get("--ip-devices",{}).get(ip,[]):
+        cmd_dict["--device"] = cmd_dict["--ip-devices"][ip][0] #这边目前先取第一个设备
     cmdpack = [[k,v] for k,v in cmd_dict.items() if v is not None]
-    cmdList = ["k4arecorder"]
+    cmdList = [tool]
+    
     if cmd_type == CmdType.Master:
         for pack in cmdpack:
             if pack[0] != "--sync-delay":
@@ -78,7 +83,7 @@ class Master:
 
     def start_all(self, cmdDict: List[str]):
         #启动子进程
-        self._start_sub(parse_cmd(cmdDict, CmdType.Sub))
+        self._start_sub(cmdDict, CmdType.Sub)
         # 启动监听线程
         self.running = True
         self.output_thread.start()
@@ -122,19 +127,20 @@ class Master:
         if self.output_thread.is_alive():
             self.output_thread.join()
             
-    def _start_sub(self, sub_cmdList: List[str]):
+    def _start_sub(self, cmd_dict: Dict):
         """启动所有worker设备"""
-        for i, worker in enumerate(self.workers):
-            response = worker.start_device(sub_cmdList)
+        for i, (worker, ip) in enumerate(zip(self.workers, self.devices_ip)):
+            response = worker.start_device(parse_cmd(cmd_dict, CmdType.Sub, ip))
             if response["code"] == 0:
                 print(f"Worker{i}:{response['msg']}")
             else:
                 print(f"Worker{i} -- 错误码:{response['code']} \nmsg:{response['msg']}")
                 exit(1)
-    def _start_master(self,master_cmdList: List[str]):
+                
+    def _start_master(self,cmd_dict: Dict):
         # -------启动master线程-------
         self.process = subprocess.Popen(
-            master_cmdList, 
+            parse_cmd(cmd_dict, CmdType.Master),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
@@ -156,7 +162,10 @@ if __name__ == "__main__":
         "--imu": "OFF", # imu
         "--external-sync": None,  # 同步的类型
         "--sync-delay": None, # 同步延迟
-        "-e": 8 # 曝光度
+        "-e": 8, # 曝光度
+        "--ip-devices": {
+            "127.0.0.1": [1]
+        }
     }
     
     master.start_all(cmd_d)
