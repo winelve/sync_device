@@ -6,9 +6,11 @@ import threading
 import subprocess
 from enum import Enum
 import atexit
+import os
 
 from scan import scan_network_fast
 
+# 全局变量 || 配置参数
 devices_ip = scan_network_fast(is_local=True) #扫描网段下的设备
 port = 8000
 tool = "k4arecorder"
@@ -29,7 +31,6 @@ CMD_DICT = {
     "--ip-devices": None, #给出指定ip的设备
     "output": './', #输出路径
 }
-
 
 class CmdType(Enum):
     Standalone = 0
@@ -105,9 +106,27 @@ class Master:
         
         # 启动输出监听线程
         self.output_thread = threading.Thread(target=self._monitor_outputs, daemon=True)
-        
-    def start_in_standalone_mode(self, cmdDict: Dict):
+    
+    #启动录制程序
+    def start(self,cmdDict:Dict,MODE:str='standalone'):
         update_global_datetime()
+        self._makedir(cmdDict["output"])  # 确保输出目录存在
+        if MODE == 'standalone':
+            self._start_in_standalone_mode(cmdDict)
+        elif MODE == 'sync':
+            self._start_in_sync_mode(cmdDict)
+
+    def stop_master(self):
+        self.process.send_signal(signal.SIGINT)
+        print("Master进程已停止")
+    
+    def stop_monitoring(self):
+        """停止输出监听"""
+        self.running = False
+        if self.output_thread.is_alive():
+            self.output_thread.join()
+
+    def _start_in_standalone_mode(self, cmdDict: Dict):
         self._print_cmd_info(cmdDict, is_sync=False)
         # 启动子进程
         self.process = subprocess.Popen(
@@ -116,11 +135,9 @@ class Master:
             stdout=subprocess.PIPE,
             text=True,
             bufsize=1
-        )
-        
+        )    
 
-    def start_in_sync_mode(self, cmdDict: List[str]):
-        update_global_datetime()
+    def _start_in_sync_mode(self, cmdDict: List[str]):
         self._print_cmd_info(cmdDict, is_sync=True)
         #启动子进程
         self._start_sub(cmdDict)
@@ -132,6 +149,15 @@ class Master:
         self._waiting_for_device_init()
         # 启动master进程
         self._start_master(cmdDict)
+        
+    def _makedir(self, path: str):
+        """创建输出目录"""
+        try:
+            if not os.path.exists(path):
+                os.makedirs(path)
+                print(f"创建输出目录: {path}")
+        except Exception as e:
+            print(f"创建目录失败: {e}")
         
     def _waiting_for_device_init(self):
         while 1:
@@ -158,16 +184,6 @@ class Master:
                 print(f"输出监听出错: {e}")
                 time.sleep(1)
                 
-    def stop_master(self):
-        self.process.send_signal(signal.SIGINT)
-        print("Master进程已停止")
-    
-    def stop_monitoring(self):
-        """停止输出监听"""
-        self.running = False
-        if self.output_thread.is_alive():
-            self.output_thread.join()
-            
     def _start_sub(self, cmd_dict: Dict):
         """启动所有worker设备"""
         for i, (worker, ip) in enumerate(zip(self.workers, self.devices_ip)):
