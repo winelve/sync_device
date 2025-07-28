@@ -11,7 +11,7 @@ import os
 from scan import scan_network_fast
 
 # 全局变量 || 配置参数
-devices_ip = scan_network_fast(is_local=True) #扫描网段下的设备
+# devices_ip = scan_network_fast(is_local=True) #扫描网段下的设备
 port = 8000
 tool = "k4arecorder"
 done_msg = "[subordinate mode] Waiting for signal from master" # 子设备初始化完成的标志
@@ -85,7 +85,7 @@ def update_global_datetime():
     datetime = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
 
 class Master:
-    def __init__(self):
+    def __init__(self, debug: bool = False):
         atexit.register(self._cleanup)
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -95,8 +95,8 @@ class Master:
         self.done_count = 0
         # 连接worker
         self.workers = []
-        self.devices_ip = devices_ip
-        for ip in devices_ip:
+        self.devices_ip = scan_network_fast(is_local=debug) #扫描网段下的设备
+        for ip in self.devices_ip:
             try:
                 worker = ServerProxy(f'http://{ip}:{port}')
                 self.workers.append(worker)
@@ -291,11 +291,11 @@ if __name__ == "__main__":
         },
         "output": "./output/recording"  # 输出路径
     }
-    master = Master()
     
+    #设置调试模式, 默认使用localhost作为worker的ip
+    master = Master(debug=True)
     try:
-        # master.start_in_sync_mode(cmd_d)
-        master.start_in_standalone_mode(cmd_d)
+        master.start(cmd_d,MODE='standalone')
         # 主线程等待，让程序保持运行
         while True:
             if master.process and master.process.poll() is not None:
