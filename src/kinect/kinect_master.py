@@ -96,26 +96,19 @@ class KinectMaster:
         self.done_count = 0
         # 连接worker
         self.workers = []
-        self.devices_ip = scan_network_fast(is_local=debug) #扫描网段下的设备
-        for ip in self.devices_ip:
-            try:
-                worker = ServerProxy(f'http://{ip}:{port}')
-                self.workers.append(worker)
-                print(f"连接到Worker: {ip}")
-            except:
-                continue # 连接失败则跳过
+        self.devices_ip = []
         
         # 启动输出监听线程
         self.output_thread = threading.Thread(target=self._monitor_outputs, daemon=True)
     
     #启动录制程序
-    def start(self,cmdDict:Dict,MODE:str='standalone'):
+    def start(self,cmdDict:Dict,MODE:str='standalone',is_local:bool=True):
         update_global_datetime()
         self._makedir(cmdDict["output"])  # 确保输出目录存在
         if MODE == 'standalone':
             self._start_in_standalone_mode(cmdDict)
         elif MODE == 'sync':
-            self._start_in_sync_mode(cmdDict)
+            self._start_in_sync_mode(cmdDict,is_local=is_local)
         
     def wait_for_subprocess(self):
         while True:
@@ -129,6 +122,17 @@ class KinectMaster:
         self.running = False
         if self.output_thread.is_alive():
             self.output_thread.join()
+            
+    def _scan_devices(self,is_local:bool):  
+        self.devices_ip = scan_network_fast(is_local) #扫描网段下的设备
+        for ip in self.devices_ip:
+            try:
+                worker = ServerProxy(f'http://{ip}:{port}')
+                self.workers.append(worker)
+                print(f"连接到Worker: {ip}")
+            except:
+                continue # 连接失败则跳过
+        
 
     def _start_in_standalone_mode(self, cmdDict: Dict):
         self._print_cmd_info(cmdDict, is_sync=False)
@@ -141,7 +145,8 @@ class KinectMaster:
             bufsize=1
         )    
 
-    def _start_in_sync_mode(self, cmdDict: List[str]):
+    def _start_in_sync_mode(self, cmdDict: List[str],is_local:bool=True):
+        self._scan_devices(is_local)  # 扫描设备
         self._print_cmd_info(cmdDict, is_sync=True)
         #启动子进程
         self._start_sub(cmdDict)
@@ -305,7 +310,7 @@ if __name__ == "__main__":
                 # master进程结束了
                 break
             time.sleep(1)
-            print("=============录制完毕=============")
+        print("=============录制完毕=============")
     except Exception as e:
         print(f"运行出错: {e}")
     finally:
