@@ -19,7 +19,7 @@ if __name__ == "__main__":
     }
     
     #设置调试模式, 默认使用localhost作为worker的ip
-    master = KinectMaster(debug=True)
+    master = KinectMaster()
     try:
         master.start(cmd_d,MODE='standalone')
         # 主线程等待，让程序保持运行

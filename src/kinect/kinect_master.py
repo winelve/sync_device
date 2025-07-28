@@ -252,6 +252,7 @@ class KinectMaster:
                 
             for item in config_items:
                 print(item)
+            print("  🎬 开始录制...")
             print("└─" + "─" * 32)
         else:
             print("📋 当前无有效配置信息")
