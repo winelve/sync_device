@@ -86,7 +86,7 @@ def update_global_datetime():
     datetime = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
 
 class KinectMaster:
-    def __init__(self, debug: bool = False):
+    def __init__(self):
         atexit.register(self._cleanup)
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
