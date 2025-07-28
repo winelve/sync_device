@@ -103,13 +103,13 @@ class KinectMaster:
         self.output_thread = threading.Thread(target=self._monitor_outputs, daemon=True)
     
     #启动录制程序
-    def start(self,cmdDict:Dict,MODE:str='standalone',is_local:bool=True):
+    def start(self,cmdDict:Dict,MODE:str='standalone',debug:bool=True):
         update_global_datetime()
         self._makedir(cmdDict["output"])  # 确保输出目录存在
         if MODE == 'standalone':
             self._start_in_standalone_mode(cmdDict)
         elif MODE == 'sync':
-            self._start_in_sync_mode(cmdDict,is_local=is_local)
+            self._start_in_sync_mode(cmdDict,is_local=debug)
         
     def wait_for_subprocess(self):
         while True:
@@ -307,12 +307,7 @@ if __name__ == "__main__":
     try:
         master.start(cmd_d,MODE='standalone')
         # 主线程等待，让程序保持运行
-        while True:
-            if master.process and master.process.poll() is not None:
-                # master进程结束了
-                break
-            time.sleep(1)
-        print("=============录制完毕=============")
+        master.wait_for_subprocess()
     except Exception as e:
         print(f"运行出错: {e}")
     finally:

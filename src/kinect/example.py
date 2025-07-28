@@ -21,9 +21,13 @@ if __name__ == "__main__":
     #设置调试模式, 默认使用localhost作为worker的ip
     master = KinectMaster()
     try:
+        # standalone模式
         master.start(cmd_d,MODE='standalone')
-        # 主线程等待，让程序保持运行
-        master.wait_for_subprocess()
+        
+        # sync debug模式
+        # master.start(cmd_d,MODE='sync',debug=True)
+        
+        master.wait_for_subprocess()  # 主线程等待，让程序保持运行
         print("=============录制完毕=============")
     except Exception as e:
         print(f"运行出错: {e}")
