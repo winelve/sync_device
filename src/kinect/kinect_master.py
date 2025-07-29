@@ -282,9 +282,19 @@ class KinectMaster:
             print(f"清理过程中出错: {e}")
     
 
+
         
                 
 if __name__ == "__main__":
+    
+    def ensure_output_path(output_path="./output/recording"):
+        if not os.path.exists(output_path):
+            os.makedirs(output_path, exist_ok=True)
+            print(f"已创建目录: {output_path}")
+        else:
+            print(f"目录已存在: {output_path}")
+        return output_path
+    
     cmd_d = {
         "--device" : 0,
         "-l" : 5,    # record length
@@ -307,6 +317,7 @@ if __name__ == "__main__":
     # --- 独立模式示例 ---
     print("--- 启动独立模式 ---")
     try:
+        ensure_output_path(cmd_d["output"])
         master.start_standalone(cmd_d)
         master.wait_for_subprocess()
     except Exception as e:
