@@ -8,7 +8,10 @@ from enum import Enum
 import atexit
 import os
 
-from kinect.scan import scan_network_fast
+try:
+    from .scan import scan_network_fast  # 作为模块被导入时
+except ImportError:
+    from scan import scan_network_fast   # 直接运行时
 
 # 全局变量 || 配置参数
 # devices_ip = scan_network_fast(is_local=True) #扫描网段下的设备
@@ -41,16 +44,17 @@ class CmdType(Enum):
 
 def parse_cmd(cmd_dict: Dict,cmd_type:CmdType,ip:str='') -> List[str]:
     cmd_dict = cmd_dict.copy()
-    if cmd_dict.get("output", None) is None:
-        cmd_dict["output"] = "."
     if ip!='' and cmd_dict.get("--ip-devices",{}).get(ip,[]):
         cmd_dict["--device"] = cmd_dict["--ip-devices"][ip][0] #这边目前先取第一个设备
     cmdpack = [[k,v] for k,v in cmd_dict.items() if (v is not None) and (k != "--ip-devices") and (k != "output") and (k in config_list)]
     cmdList = [tool]
 
     global datetime
+    output_config = cmd_dict.get("output")
+
     if cmd_type == CmdType.Master:
-        output_file = f'{cmd_dict["output"]}/master-{datetime}.mkv'
+        output_dir = output_config.get('master', '.') if isinstance(output_config, dict) else '.'
+        output_file = f'{output_dir}/master-{datetime}.mkv'
         cmdList.append("--external-sync")
         cmdList.append("master")
         for pack in cmdpack:
@@ -61,7 +65,8 @@ def parse_cmd(cmd_dict: Dict,cmd_type:CmdType,ip:str='') -> List[str]:
         cmdList.append(output_file)
         return cmdList
     elif cmd_type == CmdType.Sub: 
-        output_file = f'{cmd_dict["output"]}/sub-{datetime}.mkv'
+        output_dir = output_config.get('sub', '.') if isinstance(output_config, dict) else '.'
+        output_file = f'{output_dir}/sub-{datetime}.mkv'
         cmdList.append("--external-sync")
         cmdList.append("subordinate")
         for pack in cmdpack:
@@ -70,7 +75,8 @@ def parse_cmd(cmd_dict: Dict,cmd_type:CmdType,ip:str='') -> List[str]:
         cmdList.append(output_file)
         return cmdList
     elif cmd_type == CmdType.Standalone:
-        output_file = f'{cmd_dict["output"]}/{datetime}.mkv'
+        output_dir = output_config if isinstance(output_config, str) else '.'
+        output_file = f'{output_dir}/standalone_{datetime}.mkv'
         for pack in cmdpack:
             if pack[0] == "--sync-delay" :
                 continue
@@ -82,9 +88,12 @@ def parse_cmd(cmd_dict: Dict,cmd_type:CmdType,ip:str='') -> List[str]:
         return cmdList
     return []
 
-def update_global_datetime():
+def update_global_datetime(timestamp:str=None):
     global datetime
-    datetime = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+    if timestamp is None:
+        datetime = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+    else:
+        datetime = timestamp
 
 class KinectMaster:
     def __init__(self):
@@ -103,10 +112,9 @@ class KinectMaster:
         self.running = False
         self.output_thread = threading.Thread(target=self._monitor_outputs, daemon=True)
     
-    def start_standalone(self, cmdDict: Dict):
+    def start_standalone(self, cmdDict: Dict, timestamp:str=None):
         """启动独立模式录制"""
-        update_global_datetime()
-        self._makedir(cmdDict.get("output", "."))
+        update_global_datetime(timestamp)
         self._print_cmd_info(cmdDict, is_sync=False)
         # 启动子进程
         self.process = subprocess.Popen(
@@ -118,10 +126,9 @@ class KinectMaster:
         )
         print("独立模式录制已启动.")
 
-    def prepare_sync(self, cmdDict: Dict, is_local: bool = True):
+    def prepare_sync(self, cmdDict: Dict, is_local: bool = True, timestamp:str=None):
         """准备同步模式：扫描并启动所有子设备"""
-        update_global_datetime()
-        self._makedir(cmdDict.get("output", "."))
+        update_global_datetime(timestamp)
         self._scan_devices(is_local)  # 扫描设备
         self._print_cmd_info(cmdDict, is_sync=True)
         # 启动子进程
@@ -161,15 +168,6 @@ class KinectMaster:
                 print(f"连接到Worker: {ip}")
             except:
                 continue # 连接失败则跳过
-        
-    def _makedir(self, path: str):
-        """创建输出目录"""
-        try:
-            if not os.path.exists(path):
-                os.makedirs(path)
-                print(f"创建输出目录: {path}")
-        except Exception as e:
-            print(f"创建目录失败: {e}")
         
     def _waiting_for_device_init(self):
         while 1:

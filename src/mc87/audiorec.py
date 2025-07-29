@@ -170,15 +170,31 @@ class AudioRecorder:
                 stream.close()
                 
     def _save_audio_files(self):
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         outpath = self.config.get("outpath","./")
-        
         os.makedirs(outpath,exist_ok=True)
+        
+        filename_template = self.config.get("filename")
+
         for device_idx,frames in self.audio_data.items():
             if not frames:
                 continue
             
-            filename = f'd{device_idx}_{timestamp}.wav'
+            if filename_template:
+                # 如果有多个设备，则在文件名中附加设备索引以保持唯一性
+                if len(self.config.get("input_device_index", [])) > 1:
+                    name, ext = os.path.splitext(filename_template)
+                    filename = f"{name}_d{device_idx}{ext}"
+                else:
+                    filename = filename_template
+            else:
+                # 如果配置中未提供“filename”，则回退到旧的命名方案
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f'd{device_idx}_{timestamp}.wav'
+
+            # 用户要求mp3，但wave库保存wav文件。
+            if filename.lower().endswith('.mp3'):
+                filename = os.path.splitext(filename)[0] + '.wav'
+
             file_path = os.path.join(outpath,filename)
             
             try:

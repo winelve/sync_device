@@ -6,7 +6,8 @@ from kinect.kinect_master import KinectMaster
 from mc87.audiorec import AudioRecorder, default_config as default_audio_config
 
 
-sync_delay = 3.5
+standalone_delay = 2.83
+sync_delay = 1.05
 
 class DeviceCtlSys:
     """
@@ -29,10 +30,14 @@ class DeviceCtlSys:
         self.is_local_debug = is_local_debug
 
         self.threads = []
+        self.timestamp = ""
 
     def start_recording(self):
         """根据配置的模式启动录制过程。"""
         print(f"--- 在 {self.mode.upper()} 模式下启动设备控制系统 ---")
+        
+        self.timestamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+        self._setup_output_paths()
 
         if self.mode == 'standalone':
             self._start_standalone()
@@ -48,6 +53,33 @@ class DeviceCtlSys:
             
         print("--- 所有录制进程已完成。 ---")
 
+    def _setup_output_paths(self):
+        """根据模式和时间戳设置输出路径和文件名。"""
+        if self.mode == 'standalone':
+            output_dir = os.path.join("output", "standalone", self.timestamp)
+            os.makedirs(output_dir, exist_ok=True)
+            
+            self.kinect_config['output'] = output_dir
+            self.audio_config['outpath'] = output_dir
+            self.audio_config['filename'] = f"audio_{self.timestamp}.mp3"
+            
+        elif self.mode == 'sync':
+            base_output_dir = "output/sync"
+            master_dir = os.path.join(base_output_dir, 'master')
+            sub_dir = os.path.join(base_output_dir, 'sub')
+            audio_dir = os.path.join(base_output_dir, 'audio')
+            
+            os.makedirs(master_dir, exist_ok=True)
+            os.makedirs(sub_dir, exist_ok=True)
+            os.makedirs(audio_dir, exist_ok=True)
+            
+            self.kinect_config['output'] = {'master': master_dir, 'sub': sub_dir}
+            self.audio_config['outpath'] = audio_dir
+            self.audio_config['filename'] = f"audio_{self.timestamp}.mp3"
+        
+        # 更新录音机实例的配置，因为它是在__init__中用旧配置创建的
+        self.audio_recorder.set_config(self.audio_config)
+
     def _start_standalone(self):
         """处理独立录制工作流。"""
         print("并行启动设备...")
@@ -62,14 +94,14 @@ class DeviceCtlSys:
 
         # 启动所有线程
         kinect_thread.start()
-        time.sleep(sync_delay)
+        time.sleep(standalone_delay)
         audio_thread.start()
 
     def _start_sync(self):
         """处理同步录制工作流。"""
         # 步骤 1: 准备Kinect子设备 (这是一个阻塞调用)
         print("正在准备Kinect同步模式... 这可能需要一些时间。")
-        self.kinect_master.prepare_sync(self.kinect_config, is_local=self.is_local_debug)
+        self.kinect_master.prepare_sync(self.kinect_config, is_local=self.is_local_debug, timestamp=self.timestamp)
         print("Kinect子设备已准备就绪。")
         # 步骤 2: 并行启动Kinect主设备和音频录制器
         print("同时启动Kinect主设备和音频录制器...")
@@ -90,7 +122,7 @@ class DeviceCtlSys:
     def _kinect_standalone_task(self):
         """在独立模式下运行Kinect并等待其完成的任务。"""
         try:
-            self.kinect_master.start_standalone(self.kinect_config)
+            self.kinect_master.start_standalone(self.kinect_config, self.timestamp)
             self.kinect_master.wait_for_subprocess()
             print("Kinect录制完成。")
         except Exception as e:
@@ -123,13 +155,12 @@ class DeviceCtlSys:
 
 if __name__ == '__main__':
     # --- 配置 ---
-    RECORDING_MODE = 'standalone'  # 'standalone' 或 'sync'
+    RECORDING_MODE = 'sync'  # 'standalone' 或 'sync'
     RECORDING_SECONDS = 10
-    OUTPUT_DIR = "./output/recording"
 
     # Kinect配置
     kinect_cmd_d = {
-        "--device" : 0,
+        "--device" : 1,
         "-l" : RECORDING_SECONDS,
         "-c" : "720p",
         "-r": 15,
@@ -137,9 +168,9 @@ if __name__ == '__main__':
         "--sync-delay": 200,
         "-e": -3,
         "--ip-devices": {
-            "127.0.0.1": [1] # 对于同步模式，将IP映射到设备索引
+            "127.0.0.1": [0] # 对于同步模式，将IP映射到设备索引
         },
-        "output": OUTPUT_DIR
+        "output": {}  # 将由DeviceCtlSys动态设置
     }
 
     # 音频录制器配置
@@ -149,14 +180,11 @@ if __name__ == '__main__':
         "input_device_index": [3], # 重要: 请将其更改为您的麦克风索引
         "mode": "timing",
         "timing": RECORDING_SECONDS,
-        "outpath": OUTPUT_DIR
+        "outpath": "" # 将由DeviceCtlSys动态设置
     })
 
     # --- 系统执行 ---
     try:
-        # 确保输出目录存在
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        
         controller = DeviceCtlSys(
             kinect_config=kinect_cmd_d,
             audio_config=audio_rec_config,

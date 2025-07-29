@@ -60,3 +60,8 @@ def scan_network_fast(is_local: bool = False) -> List[str]:
         print(f"  💻 {ip}")
     
     return devices
+
+
+if __name__ == "__main__":
+    devices = scan_network_fast(is_local=False)
+    print(devices)
