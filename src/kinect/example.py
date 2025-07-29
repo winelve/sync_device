@@ -27,7 +27,6 @@ if __name__ == "__main__":
         # sync debug模式
         # master.prepare_sync(cmd_d,is_local=True)
         # master.start_sync_master()
-        
         master.wait_for_subprocess()  # 主线程等待，让程序保持运行
         print("=============录制完毕=============")
     except Exception as e:

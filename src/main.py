@@ -4,10 +4,10 @@ import os
 
 from kinect.kinect_master import KinectMaster
 from mc87.audiorec import AudioRecorder, default_config as default_audio_config
+from colorama import Fore, Style
 
-
-standalone_delay = 2.83
-sync_delay = 1.05
+standalone_delay = 0
+sync_delay = 0
 
 class DeviceCtlSys:
     """
@@ -59,7 +59,7 @@ class DeviceCtlSys:
             output_dir = os.path.join("output", "standalone", self.timestamp)
             os.makedirs(output_dir, exist_ok=True)
             
-            self.kinect_config['output'] = output_dir
+            self.kinect_config['output'] = {'standalone': output_dir}
             self.audio_config['outpath'] = output_dir
             self.audio_config['filename'] = f"audio_{self.timestamp}.mp3"
             
@@ -102,9 +102,7 @@ class DeviceCtlSys:
         # 步骤 1: 准备Kinect子设备 (这是一个阻塞调用)
         print("正在准备Kinect同步模式... 这可能需要一些时间。")
         self.kinect_master.prepare_sync(self.kinect_config, is_local=self.is_local_debug, timestamp=self.timestamp)
-        print("Kinect子设备已准备就绪。")
-        # 步骤 2: 并行启动Kinect主设备和音频录制器
-        print("同时启动Kinect主设备和音频录制器...")
+
         
         # Kinect Master线程
         kinect_thread = threading.Thread(target=self._kinect_sync_master_task)
@@ -118,6 +116,11 @@ class DeviceCtlSys:
         kinect_thread.start()
         time.sleep(sync_delay)
         audio_thread.start()
+        print(f"{Fore.RED}{Style.BRIGHT}") # Set text to bright red
+        print("========================================")
+        print("         ★★★ 正式开始录制 ★★★         ") # Added more stars for emphasis
+        print("========================================")
+        print(Style.RESET_ALL) # Reset all styles and colors
 
     def _kinect_standalone_task(self):
         """在独立模式下运行Kinect并等待其完成的任务。"""
@@ -160,7 +163,7 @@ if __name__ == '__main__':
 
     # Kinect配置
     kinect_cmd_d = {
-        "--device" : 1,
+        "--device" : 0,
         "-l" : RECORDING_SECONDS,
         "-c" : "720p",
         "-r": 15,
@@ -168,7 +171,7 @@ if __name__ == '__main__':
         "--sync-delay": 200,
         "-e": -3,
         "--ip-devices": {
-            "127.0.0.1": [0] # 对于同步模式，将IP映射到设备索引
+            "127.0.0.1": [1] # 对于同步模式，将IP映射到设备索引
         },
         "output": {}  # 将由DeviceCtlSys动态设置
     }
@@ -182,6 +185,9 @@ if __name__ == '__main__':
         "timing": RECORDING_SECONDS,
         "outpath": "" # 将由DeviceCtlSys动态设置
     })
+    
+    standalone_delay = 0
+    sync_delay = 1
 
     # --- 系统执行 ---
     try:
@@ -189,7 +195,7 @@ if __name__ == '__main__':
             kinect_config=kinect_cmd_d,
             audio_config=audio_rec_config,
             mode=RECORDING_MODE,
-            is_local_debug=True # 如果您有远程设备网络，请设置为False
+            is_local_debug=False # 如果您有远程设备网络，请设置为False
         )
         controller.start_recording()
     except Exception as e:
