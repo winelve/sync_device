@@ -1,5 +1,4 @@
 import open3d as o3d
-import sys
 import os
 
 def view_ply(file_path):

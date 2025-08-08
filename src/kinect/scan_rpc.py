@@ -1,8 +1,6 @@
 import socket
-import subprocess
 import concurrent.futures
 import ipaddress
-import platform
 import xmlrpc.client
 from typing import List
 
