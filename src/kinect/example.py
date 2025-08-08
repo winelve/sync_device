@@ -11,11 +11,13 @@ if __name__ == "__main__":
         "--imu": "OFF", # imu
         "--external-sync": None,  # 同步的类型
         "--sync-delay": 200, # 同步延迟
-        "-e": -8, # 曝光度
+        # "-e": -10, # 曝光度
         "--ip-devices": {
             "127.0.0.1": [1]
         },
-        "output": "./output/recording"  # 输出路径
+        "output":{
+            "standalone": "./output/standalone"
+        }  # 输出路径
     }
     
     #设置调试模式, 默认使用localhost作为worker的ip
