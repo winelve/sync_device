@@ -15,7 +15,6 @@ except ImportError:
 
 # 全局变量 || 配置参数
 # devices_ip = scan_network_fast(is_local=True) #扫描网段下的设备
-worker = ServerProxy(f'http://192.168.32.238:8000/')
 port = 8000
 tool = "./src/kinect/tool/k4arecorder"
 done_msg = "[subordinate mode] Waiting for signal from master" # 子设备初始化完成的标志
@@ -279,6 +278,7 @@ class KinectMaster:
             self.stop_monitoring()                  
         except Exception as e:
             print(f"清理过程中出错: {e}")
+    
                 
 if __name__ == "__main__":    
     

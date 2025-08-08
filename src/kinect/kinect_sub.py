@@ -14,6 +14,9 @@ class Worker:
         self.run_count = 0
         
     def start_device(self,cmd:List[str]) -> Dict[str, str|int]:
+        """
+        这个函数用于启动录像
+        """
         self.run_count += 1
         try: 
             """启动设备进程"""
@@ -46,6 +49,17 @@ class Worker:
         while not self.output_queue.empty():
             outputs.append(self.output_queue.get_nowait())
         return outputs
+    
+    #-----------------上面的三个函数勿动------------------
+    #-----------------下面是拍照相关的函数----------------
+    def take_photo(self):
+        """
+        请完善这个函数. kinect_sub.py 将在远程电脑运行. 
+        这个函数用于调用 运行电脑 上的kinect摄像头. 拍摄并且保存.
+        参数请合理设置. 其余辅助函数自行添加.
+        """
+        
+        pass
 
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@ import threading
 import time
 import os
 
-from kinect.kinect_master import KinectMaster
+from kinect.kinect_record_master import KinectMaster
 from mc87.audiorec import AudioRecorder, default_config as default_audio_config
 from colorama import Fore, Style
 

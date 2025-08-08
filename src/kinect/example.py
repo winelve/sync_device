@@ -1,4 +1,4 @@
-from kinect_master import KinectMaster
+from kinect.kinect_record_master import KinectMaster
 
 if __name__ == "__main__":
     cmd_d = {
