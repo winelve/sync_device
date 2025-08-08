@@ -3,3 +3,6 @@
 
 版本:
 `Python>=3.11`
+
+安装依赖库
+`pip install -r requirements.txt`
