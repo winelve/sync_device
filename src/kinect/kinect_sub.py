@@ -3,6 +3,7 @@ import threading
 import queue
 from typing import List, Dict, Any
 from xmlrpc.server import SimpleXMLRPCServer
+import time
 
 port = 8000
 class Worker:
@@ -32,6 +33,7 @@ class Worker:
         for cmd in cmds:
             result = self._create_and_monitor_process(cmd)
             results.append(result)
+            time.sleep(1)
 
         if any(p["status"] == "started" for p in results):
             return {"code": 0, "msg": "启动操作完成，具体状态请查看详情。", "details": results}

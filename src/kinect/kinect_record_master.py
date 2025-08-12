@@ -93,7 +93,7 @@ def parse_cmd(cmd_dict: Dict, cmd_type: CmdType, ip: str = '') -> List[List[str]
                 
         elif cmd_type == CmdType.Sub:
             output_dir = output_config.get('sub', '.') if isinstance(output_config, dict) else '.'
-            output_file = f'{output_dir}/sub-{datetime}-device{device_id}.mkv'
+            output_file = f'{output_dir}/sub{device_id}-{datetime}-device{device_id}.mkv'
             cmdList.extend(["--external-sync", "subordinate"])
             # 添加其他参数
             for pack in base_cmdpack:
@@ -172,7 +172,7 @@ class KinectMaster:
             self.output_thread.start()
 
         # 确保设备全部初始化
-        self._waiting_for_device_init()
+        self._waiting_for_device_init(cmdDict)
         return True
 
     def start_sync_master(self, cmd_dict: Dict):
@@ -211,9 +211,14 @@ class KinectMaster:
                 print(f"连接到Worker: {ip} 失败")
                 continue # 连接失败则跳过
         
-    def _waiting_for_device_init(self):
+    def _waiting_for_device_init(self,configDict:Dict):
+        worker_size = len(self.workers)
+        for k,v in configDict["--ip-devices"].items():
+            if k in self.devices_ip and len(v) > 0:
+                worker_size += len(v) - 1
+        print(f'worker_size: { worker_size }')
         while 1:
-            if self.done_count == len(self.workers):
+            if self.done_count == worker_size:
                 print("所有设备已初始化完成")
                 break
             time.sleep(0.5)
@@ -328,7 +333,7 @@ def test_standalone(config):
     # --- 独立模式示例 ---
     print("--- 启动独立模式 ---")
     try:
-        ensure_output_path(config["output"])
+        ensure_output_path(config["output"]["standalone"])
         master.start_standalone(config)
         master.wait_for_subprocess()
     except Exception as e:
@@ -343,22 +348,20 @@ def test_sync(config):
     master = KinectMaster()
     print("--- 启动同步模式 ---")
     # is_local=True 用于调试, 会扫描本地网络.
-    try:
         # 步骤1: 准备子设备
-        ok = master.prepare_sync(config, is_local=False)
-        if not ok:
-            master._cleanup()
-            print("--- 同步模式结束 ---")
-            print("\n" + "="*50 + "\n")
-            return
-        # 步骤2: 启动主设备
-        master.start_sync_master(config)
-        master.wait_for_subprocess()
-    except Exception as e:
-        print(f"同步模式运行出错: {e}")
-    finally:
+    ok = master.prepare_sync(config, is_local=True)
+    if not ok:
         master._cleanup()
         print("--- 同步模式结束 ---")
+        print("\n" + "="*50 + "\n")
+        return
+    # 步骤2: 启动主设备
+    
+    master.start_sync_master(config)
+    master.wait_for_subprocess()
+
+    master._cleanup()
+    print("--- 同步模式结束 ---")
     print("\n" + "="*50 + "\n")
 
                 
@@ -379,11 +382,12 @@ if __name__ == "__main__":
         },
         "output": {
             "master": "./output/sync/master",
-            "sub": "./output/sync/sub"
+            "sub": "./output/sync/sub",
+            "standalone": "./output/standalone"
         }
     }
     
     # 最好每次只测试一个    
-    test_standalone(config)
-    # test_sync(config)
+    # test_standalone(config)
+    test_sync(config)
 

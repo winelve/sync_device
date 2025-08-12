@@ -15,7 +15,6 @@ def test_standalone(config):
     # --- 独立模式示例 ---
     print("--- 启动独立模式 ---")
     try:
-        ensure_output_path(config["output"])
         master.start_standalone(config)
         master.wait_for_subprocess()
     except Exception as e:
@@ -31,7 +30,7 @@ def test_sync(config):
     # is_local=True 用于调试, 会扫描本地网络.
     try:
         # 步骤1: 准备子设备
-        ok = master.prepare_sync(config, is_local=False)
+        ok = master.prepare_sync(config, is_local=True)
         if not ok:
             master._cleanup()
             print("--- 同步模式结束 ---")
@@ -54,7 +53,7 @@ def test_parser(config):
 
 if __name__ == "__main__":    
     config = {
-        "--device" : 0,
+        "--device" : 1,
         "-l" : 5,    # record length
         "-c" : "720p",    # color-mode(分辨率)
         # "-d" : "NFOV_2X2BINNED",    # depth-mode(深度相机的模式)
@@ -63,15 +62,17 @@ if __name__ == "__main__":
         "--imu": "OFF", # imu
         "--external-sync": None,  # 同步的类型
         "--sync-delay": 200, # 同步延迟
-        "-e": -8, # 曝光度
+        "-e": 1, # 曝光度
         "--ip-devices": {
-            "127.0.0.1": [1]
+            "127.0.0.1": [0, 2, 3]
         },
         "output": {
             "master": "./output/sync/master",
-            "sub": "./output/sync/sub"
+            "sub": "./output/sync/sub",
+            "standalone": "./output/standalone"
         }
     }
+    
     
     # 最好每次只测试一个    
     # test_standalone(config)

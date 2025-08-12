@@ -163,15 +163,15 @@ if __name__ == '__main__':
 
     # Kinect配置
     kinect_cmd_d = {
-        "--device" : 0,
+        "--device" : 1,
         "-l" : RECORDING_SECONDS,
         "-c" : "720p",
         "-r": 15,
         "--imu": "OFF",
         "--sync-delay": 200,
-        "-e": -3,
+        "-e": 1,
         "--ip-devices": {
-            "127.0.0.1": [1] # 对于同步模式，将IP映射到设备索引
+            "127.0.0.1": [0,2,3] # 对于同步模式，将IP映射到设备索引
         },
         "output": {}  # 将由DeviceCtlSys动态设置
     }
@@ -180,14 +180,14 @@ if __name__ == '__main__':
     # 注意: 您可能需要先运行audiorec.py来查看可用的设备索引。
     audio_rec_config = default_audio_config.copy()
     audio_rec_config.update({
-        "input_device_index": [3], # 重要: 请将其更改为您的麦克风索引
+        "input_device_index": [6], # 重要: 请将其更改为您的麦克风索引
         "mode": "timing",
         "timing": RECORDING_SECONDS,
         "outpath": "" # 将由DeviceCtlSys动态设置
     })
     
     standalone_delay = 0
-    sync_delay = 1
+    sync_delay = 0.86
 
     # --- 系统执行 ---
     try:
@@ -195,7 +195,7 @@ if __name__ == '__main__':
             kinect_config=kinect_cmd_d,
             audio_config=audio_rec_config,
             mode=RECORDING_MODE,
-            is_local_debug=False # 如果您有远程设备网络，请设置为False
+            is_local_debug=True # 如果您有远程设备网络，请设置为False
         )
         controller.start_recording()
     except Exception as e:
