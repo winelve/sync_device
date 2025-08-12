@@ -1,7 +1,59 @@
-from kinect.kinect_record_master import KinectMaster
+from kinect_record_master import KinectMaster, CmdType, parse_cmd
+import time
+import os
 
-if __name__ == "__main__":
-    cmd_d = {
+def ensure_output_path(output_path="./output/recording"):
+    if not os.path.exists(output_path):
+        os.makedirs(output_path, exist_ok=True)
+        print(f"已创建目录: {output_path}")
+    else:
+        print(f"目录已存在: {output_path}")
+    return output_path
+
+def test_standalone(config):
+    master = KinectMaster()
+    # --- 独立模式示例 ---
+    print("--- 启动独立模式 ---")
+    try:
+        ensure_output_path(config["output"])
+        master.start_standalone(config)
+        master.wait_for_subprocess()
+    except Exception as e:
+        print(f"独立模式运行出错: {e}")
+    finally:
+        master._cleanup()
+        print("--- 独立模式结束 ---")
+
+def test_sync(config):
+    # --- 同步模式示例 ---
+    master = KinectMaster()
+    print("--- 启动同步模式 ---")
+    # is_local=True 用于调试, 会扫描本地网络.
+    try:
+        # 步骤1: 准备子设备
+        ok = master.prepare_sync(config, is_local=False)
+        if not ok:
+            master._cleanup()
+            print("--- 同步模式结束 ---")
+            print("\n" + "="*50 + "\n")
+            return
+        # 步骤2: 启动主设备
+        master.start_sync_master(config)
+        master.wait_for_subprocess()
+    except Exception as e:
+        print(f"同步模式运行出错: {e}")
+    finally:
+        master._cleanup()
+        print("--- 同步模式结束 ---")
+
+def test_parser(config):
+    print("--- 测试命令解析器 ---")
+    cmd_list = parse_cmd(config, CmdType.Standalone)
+    for cmd in cmd_list:
+        print(f"解析出的命令: {cmd}")
+
+if __name__ == "__main__":    
+    config = {
         "--device" : 0,
         "-l" : 5,    # record length
         "-c" : "720p",    # color-mode(分辨率)
@@ -11,27 +63,17 @@ if __name__ == "__main__":
         "--imu": "OFF", # imu
         "--external-sync": None,  # 同步的类型
         "--sync-delay": 200, # 同步延迟
-        # "-e": -10, # 曝光度
+        "-e": -8, # 曝光度
         "--ip-devices": {
             "127.0.0.1": [1]
         },
-        "output":{
-            "standalone": "./output/standalone"
-        }  # 输出路径
+        "output": {
+            "master": "./output/sync/master",
+            "sub": "./output/sync/sub"
+        }
     }
     
-    #设置调试模式, 默认使用localhost作为worker的ip
-    master = KinectMaster()
-    try:
-        # standalone模式
-        master.start_standalone(cmd_d)
-        
-        # sync debug模式
-        # master.prepare_sync(cmd_d,is_local=True)
-        # master.start_sync_master()
-        master.wait_for_subprocess()  # 主线程等待，让程序保持运行
-        print("=============录制完毕=============")
-    except Exception as e:
-        print(f"运行出错: {e}")
-    finally:
-        master._cleanup()
+    # 最好每次只测试一个    
+    # test_standalone(config)
+    test_sync(config)
+    # test_parser(config)

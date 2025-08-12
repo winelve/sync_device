@@ -1,6 +1,6 @@
 from xmlrpc.client import ServerProxy
 import signal
-from typing import List,Dict
+from typing import List,Dict, Tuple
 import time
 import threading
 import subprocess
@@ -41,51 +41,81 @@ class CmdType(Enum):
     Master = 1
     Sub = 2
 
-def parse_cmd(cmd_dict: Dict,cmd_type:CmdType,ip:str='') -> List[str]:
+def parse_cmd(cmd_dict: Dict, cmd_type: CmdType, ip: str = '') -> List[List[str]]:
+    """
+    解析命令并生成设备指令列表。
+    
+    首先尝试使用指定的 IP 从 --ip-devices 中获取设备列表。
+    如果失败，则回退到使用 --device 的值。
+    
+    Returns:
+        List[List[str]]: 包含所有命令的二维列表。
+    """
     cmd_dict = cmd_dict.copy()
-    if ip!='' and cmd_dict.get("--ip-devices",{}).get(ip,[]):
-        cmd_dict["--device"] = cmd_dict["--ip-devices"][ip][0] #这边目前先取第一个设备
-    cmdpack = [[k,v] for k,v in cmd_dict.items() if (v is not None) and (k != "--ip-devices") and (k != "output") and (k in config_list)]
-    cmdList = [tool]
-
+    
+    device_list = []
+    
+    # 1. 尝试使用 ip 参数从 --ip-devices 中获取设备列表
+    if ip and cmd_dict.get("--ip-devices", {}).get(ip):
+        device_list = cmd_dict["--ip-devices"][ip]
+    # 2. 如果 --ip-devices 不存在或 ip 不匹配，则回退到使用 --device 的值
+    elif cmd_dict.get("--device") is not None:
+        device_list = [cmd_dict["--device"]]
+    else:
+        # 如果既没有 --ip-devices 也没有 --device，则返回空列表
+        return []
+    
+    # 准备基础命令包（排除设备相关参数）
+    base_cmdpack = [[k, v] for k, v in cmd_dict.items() 
+                    if (v is not None) and (k != "--ip-devices") and 
+                       (k != "output") and (k != "--device") and (k in config_list)]
+    
+    output_config = cmd_dict.get("output", './')
+    result_commands = []
     global datetime
-    output_config = cmd_dict.get("output")
+    
+    # 为每个设备生成命令
+    for device_id in device_list:
+        cmdList = [tool]
+        cmdList.extend(["--device", str(device_id)])
+        
+        # 根据命令类型配置
+        if cmd_type == CmdType.Master:
+            output_dir = output_config.get('master', '.') if isinstance(output_config, dict) else '.'
+            output_file = f'{output_dir}/master-{datetime}-device{device_id}.mkv'
+            cmdList.extend(["--external-sync", "master"])
+            
+            # 添加其他参数（Master模式跳过sync-delay）
+            for pack in base_cmdpack:
+                if pack[0] == "--sync-delay":
+                    continue
+                cmdList.extend([pack[0], str(pack[1])])
+                
+        elif cmd_type == CmdType.Sub:
+            output_dir = output_config.get('sub', '.') if isinstance(output_config, dict) else '.'
+            output_file = f'{output_dir}/sub-{datetime}-device{device_id}.mkv'
+            cmdList.extend(["--external-sync", "subordinate"])
+            # 添加其他参数
+            for pack in base_cmdpack:
+                cmdList.extend([pack[0], str(pack[1])])
+                
+        elif cmd_type == CmdType.Standalone:
+            output_dir = output_config.get('standalone', '.') if isinstance(output_config, dict) else '.'
+            output_file = f'{output_dir}/standalone-{datetime}-device{device_id}.mkv'
+            # 添加其他参数（Standalone模式跳过sync相关参数）
+            for pack in base_cmdpack:
+                if pack[0] in ["--sync-delay", "--external-sync"]:
+                    continue
+                cmdList.extend([pack[0], str(pack[1])])
+        
+        else:
+            continue
+        
+        cmdList.append(output_file) # 添加输出文件
+        # 将命令添加到结果列表
+        result_commands.append(cmdList)
+    return result_commands
 
-    if cmd_type == CmdType.Master:
-        output_dir = output_config.get('master', '.') if isinstance(output_config, dict) else '.'
-        output_file = f'{output_dir}/master-{datetime}.mkv'
-        cmdList.append("--external-sync")
-        cmdList.append("master")
-        for pack in cmdpack:
-            if pack[0] == "--sync-delay":
-                continue
-            cmdList.append(pack[0])
-            cmdList.append(str(pack[1]))
-        cmdList.append(output_file)
-        return cmdList
-    elif cmd_type == CmdType.Sub: 
-        output_dir = output_config.get('sub', '.') if isinstance(output_config, dict) else '.'
-        output_file = f'{output_dir}/sub-{datetime}.mkv'
-        cmdList.append("--external-sync")
-        cmdList.append("subordinate")
-        for pack in cmdpack:
-            cmdList.append(pack[0])
-            cmdList.append(str(pack[1]))
-        cmdList.append(output_file)
-        return cmdList
-    elif cmd_type == CmdType.Standalone:
-        output_dir = output_config.get('standalone', '.') if isinstance(output_config, dict) else '.'
-        output_file = f'{output_dir}/standalone_{datetime}.mkv'
-        for pack in cmdpack:
-            if pack[0] == "--sync-delay" :
-                continue
-            if pack[0] == "--external-sync":
-                continue
-            cmdList.append(pack[0])
-            cmdList.append(str(pack[1]))
-        cmdList.append(output_file)
-        return cmdList
-    return []
 
 def update_global_datetime(timestamp:str=None):
     global datetime
@@ -117,7 +147,7 @@ class KinectMaster:
         self._print_cmd_info(cmdDict, is_sync=False)
         # 启动子进程
         self.process = subprocess.Popen(
-            parse_cmd(cmdDict, CmdType.Standalone),
+            parse_cmd(cmdDict, CmdType.Standalone)[0],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
@@ -129,6 +159,10 @@ class KinectMaster:
         """准备同步模式：扫描并启动所有子设备"""
         update_global_datetime(timestamp)
         self._scan_devices(is_local)  # 扫描设备
+        if not self.devices_ip:
+            print("\n❌ 未发现任何可用的同步设备，请检查网络连接或设备状态！\n")
+            print("同步模式初始化失败，流程已终止。\n")
+            return False
         self._print_cmd_info(cmdDict, is_sync=True)
         # 启动子进程
         self._start_sub(cmdDict)
@@ -139,18 +173,19 @@ class KinectMaster:
 
         # 确保设备全部初始化
         self._waiting_for_device_init()
+        return True
 
     def start_sync_master(self, cmd_dict: Dict):
         # -------启动master线程-------
         self.process = subprocess.Popen(
-            parse_cmd(cmd_dict, CmdType.Master),
+            parse_cmd(cmd_dict, CmdType.Master)[0],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
             bufsize=1
         )
-        print("master启动")
-        print(f'master运行命令: {parse_cmd(cmd_dict, CmdType.Master)}')
+        print("master尝试启动")
+        print(f'master运行命令: {parse_cmd(cmd_dict, CmdType.Master)[0]}')
         
     def wait_for_subprocess(self):
         while True:
@@ -278,19 +313,57 @@ class KinectMaster:
             self.stop_monitoring()                  
         except Exception as e:
             print(f"清理过程中出错: {e}")
-    
+
+
+def ensure_output_path(output_path="./output/recording"):
+    if not os.path.exists(output_path):
+        os.makedirs(output_path, exist_ok=True)
+        print(f"已创建目录: {output_path}")
+    else:
+        print(f"目录已存在: {output_path}")
+    return output_path
+
+def test_standalone(config):
+    master = KinectMaster()
+    # --- 独立模式示例 ---
+    print("--- 启动独立模式 ---")
+    try:
+        ensure_output_path(config["output"])
+        master.start_standalone(config)
+        master.wait_for_subprocess()
+    except Exception as e:
+        print(f"独立模式运行出错: {e}")
+    finally:
+        master._cleanup()
+        print("--- 独立模式结束 ---")
+    print("\n" + "="*50 + "\n")
+
+def test_sync(config):
+    # --- 同步模式示例 ---
+    master = KinectMaster()
+    print("--- 启动同步模式 ---")
+    # is_local=True 用于调试, 会扫描本地网络.
+    try:
+        # 步骤1: 准备子设备
+        ok = master.prepare_sync(config, is_local=False)
+        if not ok:
+            master._cleanup()
+            print("--- 同步模式结束 ---")
+            print("\n" + "="*50 + "\n")
+            return
+        # 步骤2: 启动主设备
+        master.start_sync_master(config)
+        master.wait_for_subprocess()
+    except Exception as e:
+        print(f"同步模式运行出错: {e}")
+    finally:
+        master._cleanup()
+        print("--- 同步模式结束 ---")
+    print("\n" + "="*50 + "\n")
+
                 
 if __name__ == "__main__":    
-    
-    def ensure_output_path(output_path="./output/recording"):
-        if not os.path.exists(output_path):
-            os.makedirs(output_path, exist_ok=True)
-            print(f"已创建目录: {output_path}")
-        else:
-            print(f"目录已存在: {output_path}")
-        return output_path
-    
-    cmd_d = {
+    config = {
         "--device" : 0,
         "-l" : 5,    # record length
         "-c" : "720p",    # color-mode(分辨率)
@@ -310,37 +383,7 @@ if __name__ == "__main__":
         }
     }
     
-    master = KinectMaster()
+    # 最好每次只测试一个    
+    test_standalone(config)
+    # test_sync(config)
 
-    # --- 独立模式示例 ---
-    # print("--- 启动独立模式 ---")
-    # try:
-    #     ensure_output_path(cmd_d["output"])
-    #     master.start_standalone(cmd_d)
-    #     master.wait_for_subprocess()
-    # except Exception as e:
-    #     print(f"独立模式运行出错: {e}")
-    # finally:
-    #     master._cleanup()
-    #     print("--- 独立模式结束 ---")
-
-    # print("\n" + "="*50 + "\n")
-
-    # --- 同步模式示例 ---
-    print("--- 启动同步模式 ---")
-    # is_local=True 用于调试, 会扫描本地网络.
-    try:
-        total_t = time.time()
-        # 步骤1: 准备子设备
-        master.prepare_sync(cmd_d, is_local=False)
-        # 步骤2: 启动主设备
-        master.start_sync_master(cmd_d)
-        startk = time.time()
-        master.wait_for_subprocess()
-        print(f'----------录制时长:{time.time()-startk}s-----------')
-        print(f'----------运行时长:{time.time()-total_t}s-----------')
-    except Exception as e:
-        print(f"同步模式运行出错: {e}")
-    finally:
-        master._cleanup()
-        print("--- 同步模式结束 ---")
