@@ -88,6 +88,8 @@ class NamingManager:
     def generate_kinect_filename(self, cmd_type_str: str, ip: str, device_index: int) -> str:
         """
         生成Kinect录制文件名
+        格式: 时间戳-设备类型-设备名称设备ID.mkv
+        示例: 2025-08-14_15-30-45-master-master_cam0.mkv
         
         Args:
             cmd_type_str: 命令类型 ("master", "subordinate", "standalone")
@@ -111,7 +113,8 @@ class NamingManager:
         else:  # standalone
             prefix = "standalone"
             
-        filename = f"{timestamp}-{prefix}-{device_name}.mkv"
+        # 在设备名称中加入设备ID
+        filename = f"{timestamp}-{prefix}{device_index}-{device_name}.mkv"
         
         # 记录创建的文件
         self.current_session["files_created"].append(filename)
@@ -121,6 +124,8 @@ class NamingManager:
     def generate_audio_filename(self, device_index: int) -> str:
         """
         生成音频录制文件名
+        格式: 时间戳-设备名称设备ID.wav
+        示例: 2025-08-14_15-30-45-main_mic1.wav
         
         Args:
             device_index: 音频设备索引
@@ -134,7 +139,8 @@ class NamingManager:
         timestamp = self.current_session["timestamp"]
         device_name = self.config_manager.get_device_name("audio", "local", device_index)
         
-        filename = f"{timestamp}-{device_name}.wav"
+        # 在设备名称中加入设备ID
+        filename = f"{timestamp}-audio{device_index}-{device_name}.wav"
         
         # 记录创建的文件
         self.current_session["files_created"].append(filename)

@@ -30,20 +30,6 @@ done_msg = "[subordinate mode] Waiting for signal from master" # 子设备初始
 datetime = ""
 config_list = ["--device", "-l", "-c", "-d", "--depth-delay", "-r", "--imu", "--external-sync", "--sync-delay", "-e", "--ip-devices", "output"]
 
-CMD_DICT = {
-    "--device" : None,
-    "-l" : None,    # record length
-    "-c" : None,    # color-mode(分辨率)
-    "-d" : None,    # depth-mode(深度相机的模式)
-    "--depth-delay": None,  # depth-delay
-    "-r": None,    # rate
-    "--imu": None, # imu
-    "--external-sync": None,  # 同步的类型
-    "--sync-delay": None, # 同步延迟
-    "-e": None, # 曝光度
-    "--ip-devices": None, #给出指定ip的设备
-    "output": './', #输出路径
-}
 
 class CmdType(Enum):
     Standalone = 0
