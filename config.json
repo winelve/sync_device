@@ -4,7 +4,9 @@
     "duration": 10,
     "standalone_delay": 0,
     "sync_delay": 0.86,
-    "is_local_debug": true
+    "is_local_debug": true,
+    "base_output_dir": "recordings",
+    "timestamp_format": "%Y-%m-%d_%H-%M-%S"
   },
   "kinect": {
     "--device": 1,
@@ -21,6 +23,16 @@
         2,
         3
       ]
+    },
+    "device_names": {
+      "127.0.0.1": {
+        "0": "master_cam",
+        "2": "left_cam",
+        "3": "right_cam"
+      },
+      "local": {
+        "1": "standalone_cam"
+      }
     }
   },
   "audio": {
@@ -32,6 +44,11 @@
       1
     ],
     "frames_per_buffer": 1024,
-    "mode": "timing"
+    "mode": "timing",
+    "device_names": {
+      "1": "main_mic",
+      "5": "backup_mic",
+      "6": "wireless_mic"
+    }
   }
 }

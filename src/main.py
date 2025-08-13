@@ -3,9 +3,16 @@ import time
 import os
 import logging
 
-from kinect.kinect_record_master import KinectMaster
-from mc87.audiorec import AudioRecorder
-from config import get_config_manager
+try:
+    from .kinect.kinect_record_master import KinectMaster
+    from .mc87.audiorec import AudioRecorder
+    from .utils.config import get_config_manager
+    from .utils.naming import NamingManager
+except ImportError:
+    from kinect.kinect_record_master import KinectMaster
+    from mc87.audiorec import AudioRecorder
+    from utils.config import get_config_manager
+    from utils.naming import NamingManager
 
 # 配置日志
 logging.basicConfig(
@@ -39,18 +46,22 @@ class DeviceCtlSys:
         self.standalone_delay = recording_config["standalone_delay"]
         self.sync_delay = recording_config["sync_delay"]
         
+        # 初始化命名管理器
+        self.naming_manager = NamingManager(config_manager)
+        
         # 初始化设备
-        self.kinect_master = KinectMaster()
+        self.kinect_master = KinectMaster(naming_manager=self.naming_manager)
         self.audio_recorder = AudioRecorder(config=self.audio_config)
 
         self.threads = []
-        self.timestamp = ""
 
     def start_recording(self):
         """根据配置的模式启动录制过程。"""
         logger.info(f"在 {self.mode.upper()} 模式下启动设备控制系统")
         
-        self.timestamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+        # 创建录制会话，传入正确的模式
+        session = self.naming_manager.create_recording_session(mode_override=self.mode)
+        
         self._setup_output_paths()
 
         if self.mode == 'standalone':
@@ -64,36 +75,61 @@ class DeviceCtlSys:
         # 等待所有线程完成
         for thread in self.threads:
             thread.join()
+        
+        # 完成录制会话
+        self.naming_manager.finalize_session(
+            mode=self.mode,
+            device_count=self._get_device_count(),
+            duration=self.config_manager.get_recording_config()["duration"]
+        )
             
         logger.info("所有录制进程已完成")
 
+    def _get_device_count(self) -> int:
+        """获取参与录制的设备数量"""
+        count = 0
+        # Kinect设备数量
+        if self.mode == 'standalone':
+            count += 1  # 一个kinect设备
+        else:  # sync模式
+            ip_devices = self.kinect_config.get("--ip-devices", {})
+            for devices in ip_devices.values():
+                count += len(devices)
+        
+        # 音频设备数量
+        count += len(self.audio_config.get("input_device_index", []))
+        
+        return count
+
     def _setup_output_paths(self):
         """根据模式和时间戳设置输出路径和文件名。"""
+        session = self.naming_manager.get_current_session_info()
+        if not session:
+            raise RuntimeError("没有活动的录制会话")
+        
+        timestamp = session["timestamp"]
+        session_dir = session["paths"]["session_dir"]
+        
+        # 更新Kinect配置
         if self.mode == 'standalone':
-            output_dir = os.path.join("output", "standalone", self.timestamp)
-            os.makedirs(output_dir, exist_ok=True)
-            
-            self.kinect_config['output'] = {'standalone': output_dir}
-            self.audio_config['outpath'] = output_dir
-            self.audio_config['filename'] = f"audio_{self.timestamp}.mp3"
-            
-            logger.debug(f"独立模式输出目录: {output_dir}")
-            
+            self.kinect_config['output'] = {'standalone': session_dir}
         elif self.mode == 'sync':
-            base_output_dir = "output/sync"
-            master_dir = os.path.join(base_output_dir, 'master')
-            sub_dir = os.path.join(base_output_dir, 'sub')
-            audio_dir = os.path.join(base_output_dir, 'audio')
-            
-            os.makedirs(master_dir, exist_ok=True)
-            os.makedirs(sub_dir, exist_ok=True)
-            os.makedirs(audio_dir, exist_ok=True)
-            
-            self.kinect_config['output'] = {'master': master_dir, 'sub': sub_dir}
-            self.audio_config['outpath'] = audio_dir
-            self.audio_config['filename'] = f"audio_{self.timestamp}.mp3"
-            
-            logger.debug(f"同步模式输出目录 - Master: {master_dir}, Sub: {sub_dir}, Audio: {audio_dir}")
+            self.kinect_config['output'] = {'sync': session_dir}
+        
+        # 更新音频配置
+        self.audio_config['outpath'] = session_dir
+        
+        # 为每个音频设备生成文件名
+        input_devices = self.audio_config.get("input_device_index", [])
+        if len(input_devices) == 1:
+            # 单个设备，使用简单的文件名
+            filename = self.naming_manager.generate_audio_filename(input_devices[0])
+            self.audio_config['filename'] = filename
+        else:
+            # 多个设备，将在音频录制器内部处理命名
+            self.audio_config['filename'] = f"{timestamp}-audio.wav"  # 模板名称
+        
+        logger.debug(f"录制会话目录: {session_dir}")
         
         # 更新录音机实例的配置，因为它是在__init__中用旧配置创建的
         self.audio_recorder.set_config(self.audio_config)
@@ -121,7 +157,9 @@ class DeviceCtlSys:
         """处理同步录制工作流。"""
         # 步骤 1: 准备Kinect子设备 (这是一个阻塞调用)
         logger.info("正在准备Kinect同步模式...")
-        success = self.kinect_master.prepare_sync(self.kinect_config, is_local=self.is_local_debug, timestamp=self.timestamp)
+        session = self.naming_manager.get_current_session_info()
+        timestamp = session["timestamp"] if session else None
+        success = self.kinect_master.prepare_sync(self.kinect_config, is_local=self.is_local_debug, timestamp=timestamp)
         
         if not success:
             logger.error("Kinect同步模式准备失败")
@@ -147,7 +185,9 @@ class DeviceCtlSys:
     def _kinect_standalone_task(self):
         """在独立模式下运行Kinect并等待其完成的任务。"""
         try:
-            self.kinect_master.start_standalone(self.kinect_config, self.timestamp)
+            session = self.naming_manager.get_current_session_info()
+            timestamp = session["timestamp"] if session else None
+            self.kinect_master.start_standalone(self.kinect_config, timestamp)
             self.kinect_master.wait_for_subprocess()
             logger.info("Kinect录制完成")
         except Exception as e:
@@ -181,7 +221,6 @@ class DeviceCtlSys:
 if __name__ == '__main__':
     # 初始化配置管理器
     config_manager = get_config_manager("./config.json")
-    
     # 获取录制配置
     recording_config = config_manager.get_recording_config()
     
@@ -195,7 +234,7 @@ if __name__ == '__main__':
         controller = DeviceCtlSys(
             config_manager=config_manager,
             # 可以在这里覆盖配置文件中的设置
-            # mode='standalone',  # 取消注释以覆盖配置文件中的模式
+            mode='sync',  # 取消注释以覆盖配置文件中的模式
             # is_local_debug=False,  # 取消注释以覆盖配置文件中的设置
         )
         controller.start_recording()

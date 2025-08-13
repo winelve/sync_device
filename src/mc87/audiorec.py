@@ -214,8 +214,12 @@ class AudioRecorder:
             if filename_template:
                 # 如果有多个设备，则在文件名中附加设备索引以保持唯一性
                 if len(self.config.get("input_device_index", [])) > 1:
+                    # 使用设备命名或索引生成唯一文件名
                     name, ext = os.path.splitext(filename_template)
-                    filename = f"{name}_d{device_idx}{ext}"
+                    # 尝试从配置中获取设备名称
+                    device_names = self.config.get("device_names", {})
+                    device_name = device_names.get(str(device_idx), f"d{device_idx}")
+                    filename = f"{name}_{device_name}{ext}"
                 else:
                     filename = filename_template
             else:

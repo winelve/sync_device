@@ -50,12 +50,18 @@ class CmdType(Enum):
     Master = 1
     Sub = 2
 
-def parse_cmd(cmd_dict: Dict, cmd_type: CmdType, ip: str = '') -> List[List[str]]:
+def parse_cmd(cmd_dict: Dict, cmd_type: CmdType, ip: str = '', naming_manager=None) -> List[List[str]]:
     """
     解析命令并生成设备指令列表。
     
     首先尝试使用指定的 IP 从 --ip-devices 中获取设备列表。
     如果失败，则回退到使用 --device 的值。
+    
+    Args:
+        cmd_dict: 命令配置字典
+        cmd_type: 命令类型枚举
+        ip: IP地址
+        naming_manager: 命名管理器实例
     
     Returns:
         List[List[str]]: 包含所有命令的二维列表。
@@ -77,52 +83,87 @@ def parse_cmd(cmd_dict: Dict, cmd_type: CmdType, ip: str = '') -> List[List[str]
     # 准备基础命令包（排除设备相关参数）
     base_cmdpack = [[k, v] for k, v in cmd_dict.items() 
                     if (v is not None) and (k != "--ip-devices") and 
-                       (k != "output") and (k != "--device") and (k in config_list)]
+                       (k != "output") and (k != "--device") and (k != "device_names") and (k in config_list)]
     
     output_config = cmd_dict.get("output", './')
     result_commands = []
-    global datetime
     
     # 为每个设备生成命令
     for device_id in device_list:
         cmdList = [tool]
         cmdList.extend(["--device", str(device_id)])
         
-        # 根据命令类型配置
-        if cmd_type == CmdType.Master:
-            output_dir = output_config.get('master', '.') if isinstance(output_config, dict) else '.'
-            output_file = f'{output_dir}/master-{datetime}-device{device_id}.mkv'
-            cmdList.extend(["--external-sync", "master"])
+        # 生成输出文件路径和名称
+        if naming_manager:
+            # 使用新的命名管理器
+            if cmd_type == CmdType.Master:
+                output_paths = naming_manager.get_kinect_output_paths("sync")
+                output_dir = output_paths["sync"]
+                filename = naming_manager.generate_kinect_filename("master", ip, device_id)
+                cmdList.extend(["--external-sync", "master"])
+                
+                # 添加其他参数（Master模式跳过sync-delay）
+                for pack in base_cmdpack:
+                    if pack[0] == "--sync-delay":
+                        continue
+                    cmdList.extend([pack[0], str(pack[1])])
+                    
+            elif cmd_type == CmdType.Sub:
+                output_paths = naming_manager.get_kinect_output_paths("sync")
+                output_dir = output_paths["sync"]
+                filename = naming_manager.generate_kinect_filename("subordinate", ip, device_id)
+                cmdList.extend(["--external-sync", "subordinate"])
+                # 添加其他参数
+                for pack in base_cmdpack:
+                    cmdList.extend([pack[0], str(pack[1])])
+                    
+            elif cmd_type == CmdType.Standalone:
+                output_paths = naming_manager.get_kinect_output_paths("standalone")
+                output_dir = output_paths["standalone"]
+                filename = naming_manager.generate_kinect_filename("standalone", "local", device_id)
+                # 添加其他参数（Standalone模式跳过sync相关参数）
+                for pack in base_cmdpack:
+                    if pack[0] in ["--sync-delay", "--external-sync"]:
+                        continue
+                    cmdList.extend([pack[0], str(pack[1])])
             
-            # 添加其他参数（Master模式跳过sync-delay）
-            for pack in base_cmdpack:
-                if pack[0] == "--sync-delay":
-                    continue
-                cmdList.extend([pack[0], str(pack[1])])
-                
-        elif cmd_type == CmdType.Sub:
-            output_dir = output_config.get('sub', '.') if isinstance(output_config, dict) else '.'
-            output_file = f'{output_dir}/sub{device_id}-{datetime}-device{device_id}.mkv'
-            cmdList.extend(["--external-sync", "subordinate"])
-            # 添加其他参数
-            for pack in base_cmdpack:
-                cmdList.extend([pack[0], str(pack[1])])
-                
-        elif cmd_type == CmdType.Standalone:
-            output_dir = output_config.get('standalone', '.') if isinstance(output_config, dict) else '.'
-            output_file = f'{output_dir}/standalone-{datetime}-device{device_id}.mkv'
-            # 添加其他参数（Standalone模式跳过sync相关参数）
-            for pack in base_cmdpack:
-                if pack[0] in ["--sync-delay", "--external-sync"]:
-                    continue
-                cmdList.extend([pack[0], str(pack[1])])
-        
+            output_file = os.path.join(output_dir, filename)
+            
         else:
-            continue
+            # 保持原有的命名方式作为后备
+            global datetime
+            if cmd_type == CmdType.Master:
+                output_dir = output_config.get('master', '.') if isinstance(output_config, dict) else '.'
+                output_file = f'{output_dir}/master-{datetime}-device{device_id}.mkv'
+                cmdList.extend(["--external-sync", "master"])
+                
+                # 添加其他参数（Master模式跳过sync-delay）
+                for pack in base_cmdpack:
+                    if pack[0] == "--sync-delay":
+                        continue
+                    cmdList.extend([pack[0], str(pack[1])])
+                    
+            elif cmd_type == CmdType.Sub:
+                output_dir = output_config.get('sub', '.') if isinstance(output_config, dict) else '.'
+                output_file = f'{output_dir}/sub{device_id}-{datetime}-device{device_id}.mkv'
+                cmdList.extend(["--external-sync", "subordinate"])
+                # 添加其他参数
+                for pack in base_cmdpack:
+                    cmdList.extend([pack[0], str(pack[1])])
+                    
+            elif cmd_type == CmdType.Standalone:
+                output_dir = output_config.get('standalone', '.') if isinstance(output_config, dict) else '.'
+                output_file = f'{output_dir}/standalone-{datetime}-device{device_id}.mkv'
+                # 添加其他参数（Standalone模式跳过sync相关参数）
+                for pack in base_cmdpack:
+                    if pack[0] in ["--sync-delay", "--external-sync"]:
+                        continue
+                    cmdList.extend([pack[0], str(pack[1])])
         
-        cmdList.append(output_file) # 添加输出文件
-        # 将命令添加到结果列表
-        result_commands.append(cmdList)
+        if cmd_type in [CmdType.Master, CmdType.Sub, CmdType.Standalone]:
+            cmdList.append(output_file) # 添加输出文件
+            # 将命令添加到结果列表
+            result_commands.append(cmdList)
     return result_commands
 
 
@@ -134,7 +175,7 @@ def update_global_datetime(timestamp:str=None):
         datetime = timestamp
 
 class KinectMaster:
-    def __init__(self):
+    def __init__(self, naming_manager=None):
         atexit.register(self._cleanup)
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -145,6 +186,9 @@ class KinectMaster:
         # 连接worker
         self.workers = []
         self.devices_ip = []
+        
+        # 命名管理器
+        self.naming_manager = naming_manager
         
         # 启动输出监听线程
         self.running = False
@@ -158,7 +202,7 @@ class KinectMaster:
         
         try:
             # 启动子进程
-            cmd_list = parse_cmd(cmdDict, CmdType.Standalone)[0]
+            cmd_list = parse_cmd(cmdDict, CmdType.Standalone, naming_manager=self.naming_manager)[0]
             logger.debug(f"执行命令: {' '.join(cmd_list)}")
             
             self.process = subprocess.Popen(
@@ -206,7 +250,7 @@ class KinectMaster:
     def start_sync_master(self, cmd_dict: Dict):
         """启动master线程"""
         try:
-            cmd_list = parse_cmd(cmd_dict, CmdType.Master)[0]
+            cmd_list = parse_cmd(cmd_dict, CmdType.Master, naming_manager=self.naming_manager)[0]
             logger.info("正在启动master设备")
             logger.debug(f"master运行命令: {' '.join(cmd_list)}")
             
@@ -298,7 +342,7 @@ class KinectMaster:
         logger.info(f"正在启动 {len(self.workers)} 个子设备...")
         for i, (worker, ip) in enumerate(zip(self.workers, self.devices_ip)):
             try:
-                response = worker.start_device(parse_cmd(cmd_dict, CmdType.Sub, ip))
+                response = worker.start_device(parse_cmd(cmd_dict, CmdType.Sub, ip, naming_manager=self.naming_manager))
                 if response["code"] == 0:
                     logger.info(f"Worker{i}({ip}): {response['msg']}")
                 else:
