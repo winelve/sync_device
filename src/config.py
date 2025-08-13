@@ -17,36 +17,36 @@ class ConfigManager:
         """获取默认配置"""
         return {
             "recording": {
-                "mode": "sync",  # 'standalone' 或 'sync'
-                "duration": 10,  # 录制时长（秒）
-                "standalone_delay": 0,  # 独立模式启动延迟
-                "sync_delay": 0.86,  # 同步模式启动延迟
+                "mode": "sync",  # 系统级录制模式: 'standalone' 或 'sync'
+                "duration": 10,  # 录制时长（秒）- 所有设备统一时长
+                "standalone_delay": 0,  # 独立模式下音频录制延迟启动时间（秒）
+                "sync_delay": 0.86,  # 同步模式下音频录制延迟启动时间（秒）
                 "is_local_debug": True  # 是否为本地调试模式
             },
             "kinect": {
-                "--device": 1,
-                "-l": 10,  # 录制时长，将被 recording.duration 覆盖
-                "-c": "720p",  # 色彩模式
-                "-r": 15,  # 帧率
-                "--imu": "OFF",  # IMU开关
-                "--sync-delay": 200,  # 同步延迟（微秒）
-                "-e": 1,  # 曝光控制
+                "--device": 1,  # 主设备索引
+                "-c": "720p",  # 彩色相机分辨率: 3072p/2160p/1536p/1440p/1080p/720p/720p_NV12/720p_YUY2/OFF
+                "-d": "NFOV_UNBINNED",  # 深度相机模式: NFOV_2X2BINNED/NFOV_UNBINNED/WFOV_2X2BINNED/WFOV_UNBINNED/PASSIVE_IR/OFF
+                "--depth-delay": 0,  # 彩色帧与深度帧时间偏移（微秒）
+                "-r": 15,  # 相机帧率: 30/15/5
+                "--imu": "OFF",  # 惯性测量单元: ON/OFF
+                "--sync-delay": 200,  # 主从相机间同步延迟（微秒，仅从设备模式有效）
+                "-e": 1,  # RGB相机手动曝光值: -11到1，或自动曝光
                 "--ip-devices": {
-                    "127.0.0.1": [0, 2, 3]  # IP到设备索引的映射
-                },
-                "output": {}  # 输出路径，由系统动态设置
+                    "127.0.0.1": [0, 2, 3]  # IP到设备索引的映射（仅同步模式使用）
+                }
+                # 注意: --external-sync 和 -l 参数由系统根据 recording 配置自动生成
+                # 注意: output 路径由系统动态设置
             },
             "audio": {
                 "format": 8,  # 音频格式 (8,4,2 --> 质量逐渐升高)
                 "channels": 1,  # 通道数量
                 "rate": 44100,  # 采样率
                 "is_input": True,  # 是否为输入设备
-                "input_device_index": [6],  # 输入设备索引列表
+                "input_device_index": [1],  # 输入设备索引列表
                 "frames_per_buffer": 1024,  # 每帧样本数
-                "mode": "timing",  # 录制模式: 'timing'(定时) 或 'manual'(手动)
-                "timing": 10,  # 定时录制时长，将被 recording.duration 覆盖
-                "outpath": "",  # 输出路径，由系统动态设置
-                "filename": ""  # 文件名，由系统动态设置
+                "mode": "timing"  # 录制模式: 'timing'(定时) 或 'manual'(手动)
+                # 注意: timing/outpath/filename 参数由系统根据 recording 配置自动生成
             }
         }
     
@@ -103,17 +103,33 @@ class ConfigManager:
         return self.config["recording"]
     
     def get_kinect_config(self) -> Dict[str, Any]:
-        """获取Kinect配置，并同步录制时长"""
+        """获取Kinect配置，自动生成运行时参数"""
         kinect_config = self.config["kinect"].copy()
-        # 同步录制时长
-        kinect_config["-l"] = self.config["recording"]["duration"]
+        recording_config = self.config["recording"]
+        
+        # 自动设置录制时长
+        kinect_config["-l"] = recording_config["duration"]
+        
+        # 自动设置输出路径（将在运行时由 DeviceCtlSys 设置）
+        kinect_config["output"] = {}
+        
+        # 注意: --external-sync 参数不在这里设置，而是在 parse_cmd 函数中
+        # 根据 CmdType 自动生成，避免配置冲突
+        
         return kinect_config
     
     def get_audio_config(self) -> Dict[str, Any]:
-        """获取音频配置，并同步录制时长"""
+        """获取音频配置，自动生成运行时参数"""
         audio_config = self.config["audio"].copy()
-        # 同步录制时长
-        audio_config["timing"] = self.config["recording"]["duration"]
+        recording_config = self.config["recording"]
+        
+        # 自动设置录制时长
+        audio_config["timing"] = recording_config["duration"]
+        
+        # 自动设置运行时参数（将在运行时由 DeviceCtlSys 设置）
+        audio_config["outpath"] = ""
+        audio_config["filename"] = ""
+        
         return audio_config
     
     def update_config(self, section: str, updates: Dict[str, Any]) -> None:

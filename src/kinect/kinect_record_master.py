@@ -342,7 +342,7 @@ class KinectMaster:
         mode = "同步模式" if is_sync else "独立模式"
         logger.info(f"录制配置 - {mode}")
         for item in config_items:
-            logger.info(f"  {item}")
+            logger.debug(f"  {item}")
         logger.info("开始录制...")
         
         
@@ -447,6 +447,6 @@ if __name__ == "__main__":
     }
     
     # 最好每次只测试一个    
-    # test_standalone(test_config)
-    test_sync(test_config)
+    test_standalone(test_config)
+    # test_sync(test_config)
 

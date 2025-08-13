@@ -8,8 +8,9 @@
   },
   "kinect": {
     "--device": 1,
-    "-l": 10,
     "-c": "720p",
+    "-d": "NFOV_UNBINNED",
+    "--depth-delay": 0,
     "-r": 15,
     "--imu": "OFF",
     "--sync-delay": 200,
@@ -20,8 +21,7 @@
         2,
         3
       ]
-    },
-    "output": {}
+    }
   },
   "audio": {
     "format": 8,
@@ -32,9 +32,6 @@
       1
     ],
     "frames_per_buffer": 1024,
-    "mode": "timing",
-    "timing": 10,
-    "outpath": "",
-    "filename": ""
+    "mode": "timing"
   }
 }

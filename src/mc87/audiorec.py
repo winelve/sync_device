@@ -8,10 +8,6 @@ from typing import Dict,List
 import logging
 
 import pyaudio
-import colorama
-from colorama import Fore, Style
-
-colorama.init()
 
 # 配置日志
 logging.basicConfig(
@@ -129,7 +125,7 @@ class AudioRecorder:
                 # 简化的倒计时显示
                 for i in range(timing, 0, -1):
                     if i <= 3:  # 只在最后3秒显示倒计时
-                        logger.info(f"剩余时间: {i} 秒")
+                        logger.debug(f"剩余时间: {i} 秒")
                     time.sleep(1)
                     
                 self.stop_recording.set()
@@ -244,7 +240,7 @@ class AudioRecorder:
                 file_size = os.path.getsize(file_path)
                 file_size_mb = file_size / (1024 * 1024)
                 
-                logger.info(f"设备 {device_idx} 录音已保存: {os.path.basename(file_path)} ({file_size_mb:.2f}MB)")
+                logger.debug(f"设备 {device_idx} 录音已保存: {os.path.basename(file_path)} ({file_size_mb:.2f}MB)")
             except Exception as e:
                 logger.error(f"设备 {device_idx} 保存失败: {str(e)}")
 
@@ -298,7 +294,7 @@ if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)
     
     recorder = AudioRecorder()  # 使用默认配置
-    logger.info("=== 音频设备列表 ===")
-    recorder.show_devices()
-    logger.info("=== 音频设备列表结束 ===")
-    # recorder.record_multi_devices()  # 取消注释以测试录制
+    # logger.info("=== 音频设备列表 ===")
+    # recorder.show_devices()
+    # logger.info("=== 音频设备列表结束 ===")
+    recorder.record_multi_devices()  # 取消注释以测试录制
