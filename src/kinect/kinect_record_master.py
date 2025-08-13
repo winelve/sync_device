@@ -7,11 +7,20 @@ import subprocess
 from enum import Enum
 import atexit
 import os
+import logging
 
 try:
     from .scan_rpc import find_rpc_servers  # 作为模块被导入时
 except ImportError:
     from scan_rpc import find_rpc_servers   # 直接运行时
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # 全局变量 || 配置参数
 # devices_ip = scan_network_fast(is_local=True) #扫描网段下的设备
@@ -144,53 +153,81 @@ class KinectMaster:
     def start_standalone(self, cmdDict: Dict, timestamp:str=None):
         """启动独立模式录制"""
         update_global_datetime(timestamp)
+        logger.info("启动独立模式录制")
         self._print_cmd_info(cmdDict, is_sync=False)
-        # 启动子进程
-        self.process = subprocess.Popen(
-            parse_cmd(cmdDict, CmdType.Standalone)[0],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-            bufsize=1
-        )
-        print("独立模式录制已启动.")
+        
+        try:
+            # 启动子进程
+            cmd_list = parse_cmd(cmdDict, CmdType.Standalone)[0]
+            logger.debug(f"执行命令: {' '.join(cmd_list)}")
+            
+            self.process = subprocess.Popen(
+                cmd_list,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
+            logger.info("独立模式录制已成功启动")
+        except Exception as e:
+            logger.error(f"启动独立模式录制失败: {e}")
+            raise
 
     def prepare_sync(self, cmdDict: Dict, is_local: bool = True, timestamp:str=None):
         """准备同步模式：扫描并启动所有子设备"""
+        logger.info("开始准备同步模式")
         update_global_datetime(timestamp)
         self._scan_devices(is_local)  # 扫描设备
+        
         if not self.devices_ip:
-            print("\n❌ 未发现任何可用的同步设备，请检查网络连接或设备状态！\n")
-            print("同步模式初始化失败，流程已终止。\n")
+            logger.error("未发现任何可用的同步设备，请检查网络连接或设备状态,同步模式初始化失败，流程已终止")
             return False
+            
+        logger.info(f"成功扫描到 {len(self.devices_ip)} 个设备: {self.devices_ip}")
         self._print_cmd_info(cmdDict, is_sync=True)
-        # 启动子进程
-        self._start_sub(cmdDict)
-        # 启动监听线程
-        self.running = True
-        if not self.output_thread.is_alive():
-            self.output_thread.start()
+        
+        try:
+            # 启动子进程
+            self._start_sub(cmdDict)
+            # 启动监听线程
+            self.running = True
+            if not self.output_thread.is_alive():
+                self.output_thread.start()
+                logger.debug("输出监听线程已启动")
 
-        # 确保设备全部初始化
-        self._waiting_for_device_init(cmdDict)
-        return True
+            # 确保设备全部初始化
+            self._waiting_for_device_init(cmdDict)
+            logger.info("同步模式准备完成")
+            return True
+        except Exception as e:
+            logger.error(f"准备同步模式失败: {e}")
+            return False
 
     def start_sync_master(self, cmd_dict: Dict):
-        # -------启动master线程-------
-        self.process = subprocess.Popen(
-            parse_cmd(cmd_dict, CmdType.Master)[0],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-            bufsize=1
-        )
-        print("master尝试启动")
-        print(f'master运行命令: {parse_cmd(cmd_dict, CmdType.Master)[0]}')
+        """启动master线程"""
+        try:
+            cmd_list = parse_cmd(cmd_dict, CmdType.Master)[0]
+            logger.info("正在启动master设备")
+            logger.debug(f"master运行命令: {' '.join(cmd_list)}")
+            
+            self.process = subprocess.Popen(
+                cmd_list,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
+            logger.info("master设备启动成功")
+        except Exception as e:
+            logger.error(f"启动master设备失败: {e}")
+            raise
         
     def wait_for_subprocess(self):
+        """等待子进程完成"""
+        logger.info("等待录制进程完成...")
         while True:
             if self.process and self.process.poll() is not None:
-                # 进程结束了
+                logger.info("录制进程已完成")
                 break
             time.sleep(1)
     
@@ -199,76 +236,96 @@ class KinectMaster:
         self.running = False
         if self.output_thread.is_alive():
             self.output_thread.join()
+            logger.debug("输出监听线程已停止")
             
-    def _scan_devices(self,is_local:bool):  
-        self.devices_ip = find_rpc_servers(port=8000,is_local=is_local) #扫描网段下的设备
+    def _scan_devices(self, is_local: bool):  
+        """扫描并连接到worker设备"""
+        logger.info(f"开始扫描设备 (本地模式: {is_local})")
+        self.devices_ip = find_rpc_servers(port=8000, is_local=is_local)
+        
+        if not self.devices_ip:
+            logger.warning("未发现任何RPC服务器")
+            return
+            
+        logger.info(f"发现 {len(self.devices_ip)} 个设备: {self.devices_ip}")
+        
         for ip in self.devices_ip:
             try:
                 worker = ServerProxy(f'http://{ip}:{port}/')
                 self.workers.append(worker)
-                print(f"连接到Worker: {ip}")
-            except:
-                print(f"连接到Worker: {ip} 失败")
-                continue # 连接失败则跳过
+                logger.info(f"成功连接到Worker: {ip}")
+            except Exception as e:
+                logger.error(f"连接到Worker {ip} 失败: {e}")
+                continue
         
-    def _waiting_for_device_init(self,configDict:Dict):
+    def _waiting_for_device_init(self, configDict: Dict):
+        """等待所有设备初始化完成"""
         worker_size = len(self.workers)
-        for k,v in configDict["--ip-devices"].items():
+        for k, v in configDict["--ip-devices"].items():
             if k in self.devices_ip and len(v) > 0:
                 worker_size += len(v) - 1
-        print(f'worker_size: { worker_size }')
-        while 1:
+                
+        logger.info(f"等待 {worker_size} 个设备初始化完成...")
+        
+        while True:
             if self.done_count == worker_size:
-                print("所有设备已初始化完成")
+                logger.info("所有设备已初始化完成")
                 break
+            logger.debug(f"已完成初始化设备数: {self.done_count}/{worker_size}")
             time.sleep(0.5)
         
     def _monitor_outputs(self):
         """后台线程监听所有worker输出"""
+        logger.debug("开始监听worker输出")
         while self.running:
             try:            
                 # 监听所有worker输出
-                for i, (worker, ip) in enumerate(zip(self.workers,self.devices_ip)):
+                for i, (worker, ip) in enumerate(zip(self.workers, self.devices_ip)):
                     outputs = worker.get_outputs()
                     for output in outputs:
-                        timestamp = time.strftime("%H:%M:%S", time.localtime())
-                        print(f"[{timestamp}] Worker{i}({ip}) >> {output}")
-                        #统计已经初始化完成的设备数量
+                        logger.debug(f"Worker{i}({ip}): {output}")
+                        # 统计已经初始化完成的设备数量
                         if done_msg in output:
                             self.done_count += 1
+                            logger.info(f"Worker{i}({ip}) 初始化完成")
                 time.sleep(1)  # 避免过于频繁的轮询
             except Exception as e:
-                print(f"输出监听出错: {e}")
+                logger.error(f"输出监听出错: {e}")
                 time.sleep(1)
                 
     def _start_sub(self, cmd_dict: Dict):
         """启动所有worker设备"""
+        logger.info(f"正在启动 {len(self.workers)} 个子设备...")
         for i, (worker, ip) in enumerate(zip(self.workers, self.devices_ip)):
-            response = worker.start_device(parse_cmd(cmd_dict, CmdType.Sub, ip))
-            if response["code"] == 0:
-                print(f"Worker{i}:{response['msg']}")
-            else:
-                print(f"Worker{i} -- 错误码:{response['code']} \nmsg:{response['msg']}")
+            try:
+                response = worker.start_device(parse_cmd(cmd_dict, CmdType.Sub, ip))
+                if response["code"] == 0:
+                    logger.info(f"Worker{i}({ip}): {response['msg']}")
+                else:
+                    logger.error(f"Worker{i}({ip}) 启动失败 - 错误码:{response['code']}, 信息:{response['msg']}")
+                    exit(1)
+            except Exception as e:
+                logger.error(f"启动Worker{i}({ip})时出错: {e}")
                 exit(1)
         
-    def _print_cmd_info(self, cmd_dict: dict, is_sync:bool):
+    def _print_cmd_info(self, cmd_dict: dict, is_sync: bool):
         """打印录制配置信息"""
         config_items = []
         
         # 配置映射表
         config_map = {
-            "--device": ("📱 设备", ""),
-            "-l": ("⏱️  录制时长", "秒"),
-            "-c": ("🎥 色彩模式", ""),
-            "-d": ("📷 深度模式", ""),
-            "--depth-delay": ("⏰ 深度延迟", "μs"),
-            "-r": ("🎬 帧率", "fps"),
-            "--imu": ("🧭 IMU", ""),
-            "--external-sync": ("🔗 外部同步", ""),
-            "--sync-delay": ("⏳ 同步延迟", "μs"),
-            "-e": ("💡 曝光控制", ""),
-            "--ip-devices": ("🌐 IP设备", ""),
-            "output": ("📁 输出路径", "")
+            "--device": ("设备", ""),
+            "-l": ("录制时长", "秒"),
+            "-c": ("色彩模式", ""),
+            "-d": ("深度模式", ""),
+            "--depth-delay": ("深度延迟", "μs"),
+            "-r": ("帧率", "fps"),
+            "--imu": ("IMU", ""),
+            "--external-sync": ("外部同步", ""),
+            "--sync-delay": ("同步延迟", "μs"),
+            "-e": ("曝光控制", ""),
+            "--ip-devices": ("IP设备", ""),
+            "output": ("输出路径", "")
         }
         
         # 收集有效配置
@@ -279,94 +336,96 @@ class KinectMaster:
                 
             if value is not None:
                 display_value = f"{value} {unit}".strip()
-                config_items.append(f"  {label}: {display_value}")
+                config_items.append(f"{label}: {display_value}")
         
-        # 输出格式化信息
-        if config_items:
-            print("\n┌─ 📋 录制配置信息 ─" + "─" * 20)
-            if is_sync:
-                print("  🔗 Sync模式")
-            else:
-                print("  🔗 Standalone模式")
-                
-            for item in config_items:
-                print(item)
-            print("  🎬 开始录制...")
-            print("└─" + "─" * 32)
-        else:
-            print("📋 当前无有效配置信息")
+        # 输出配置信息
+        mode = "同步模式" if is_sync else "独立模式"
+        logger.info(f"录制配置 - {mode}")
+        for item in config_items:
+            logger.info(f"  {item}")
+        logger.info("开始录制...")
+        
         
     def _signal_handler(self, signum, frame):
         """处理信号"""
-        print(f"\n收到信号 {signum}，正在清理...")
+        logger.info(f"收到信号 {signum}，正在清理...")
         self._cleanup()
         exit(0)
+        
     def _cleanup(self):
         """清理资源"""
         try:
+            logger.debug("开始清理资源...")
             # 停止master进程
             if hasattr(self, 'process') and self.process and self.process.poll() is None:
+                logger.info("正在停止master进程...")
                 self.process.terminate()
                 # 等待一下，如果还没结束就强制杀死
                 try:
                     self.process.wait(timeout=3)
+                    logger.info("Master进程已正常停止")
                 except subprocess.TimeoutExpired:
                     self.process.kill()
                     self.process.wait()
-                print("Master进程已停止")
+                    logger.warning("Master进程被强制终止")
             
-            self.stop_monitoring()                  
+            self.stop_monitoring()
+            logger.debug("资源清理完成")
         except Exception as e:
-            print(f"清理过程中出错: {e}")
+            logger.error(f"清理过程中出错: {e}")
 
 
 def ensure_output_path(output_path="./output/recording"):
+    """确保输出路径存在"""
     if not os.path.exists(output_path):
         os.makedirs(output_path, exist_ok=True)
-        print(f"已创建目录: {output_path}")
+        logger.info(f"已创建目录: {output_path}")
     else:
-        print(f"目录已存在: {output_path}")
+        logger.debug(f"目录已存在: {output_path}")
     return output_path
 
 def test_standalone(config):
+    """测试独立模式"""
     master = KinectMaster()
-    # --- 独立模式示例 ---
-    print("--- 启动独立模式 ---")
+    logger.info("=== 启动独立模式测试 ===")
+    
     try:
         ensure_output_path(config["output"]["standalone"])
         master.start_standalone(config)
         master.wait_for_subprocess()
     except Exception as e:
-        print(f"独立模式运行出错: {e}")
+        logger.error(f"独立模式运行出错: {e}")
     finally:
         master._cleanup()
-        print("--- 独立模式结束 ---")
-    print("\n" + "="*50 + "\n")
+        logger.info("=== 独立模式测试结束 ===")
 
 def test_sync(config):
-    # --- 同步模式示例 ---
+    """测试同步模式"""
     master = KinectMaster()
-    print("--- 启动同步模式 ---")
-    # is_local=True 用于调试, 会扫描本地网络.
-        # 步骤1: 准备子设备
-    ok = master.prepare_sync(config, is_local=True)
-    if not ok:
-        master._cleanup()
-        print("--- 同步模式结束 ---")
-        print("\n" + "="*50 + "\n")
-        return
-    # 步骤2: 启动主设备
+    logger.info("=== 启动同步模式测试 ===")
     
-    master.start_sync_master(config)
-    master.wait_for_subprocess()
-
-    master._cleanup()
-    print("--- 同步模式结束 ---")
-    print("\n" + "="*50 + "\n")
+    try:
+        # 步骤1: 准备子设备
+        ok = master.prepare_sync(config, is_local=True)
+        if not ok:
+            return
+            
+        # 步骤2: 启动主设备
+        master.start_sync_master(config)
+        master.wait_for_subprocess()
+    except Exception as e:
+        logger.error(f"同步模式运行出错: {e}")
+    finally:
+        master._cleanup()
+        logger.info("=== 同步模式测试结束 ===")
 
                 
-if __name__ == "__main__":    
-    config = {
+if __name__ == "__main__":
+    logger.info("=== Kinect录制主控测试模式 ===")
+    logger.info("注意: 生产环境请使用main.py和config.json进行配置")
+    
+    # 测试用配置（仅用于独立测试）
+    test_config = {
         "--device" : 0,
         "-l" : 5,    # record length
         "-c" : "720p",    # color-mode(分辨率)
@@ -388,6 +447,6 @@ if __name__ == "__main__":
     }
     
     # 最好每次只测试一个    
-    # test_standalone(config)
-    test_sync(config)
+    # test_standalone(test_config)
+    test_sync(test_config)
 

@@ -4,6 +4,15 @@ import queue
 from typing import List, Dict, Any
 from xmlrpc.server import SimpleXMLRPCServer
 import time
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 port = 8000
 class Worker:
@@ -21,24 +30,30 @@ class Worker:
         每个子数组都是一个独立的命令.
         """
         self.run_count += 1
-        print(f'================连续工作{self.run_count}次================')
+        logger.info(f'开始第 {self.run_count} 次工作任务')
 
         if self.is_running:
+            logger.info("检测到正在运行的进程，先停止现有进程")
             self.stop_devices()
 
         self.processes.clear()
         self.is_running = True
         results = []
 
-        for cmd in cmds:
+        logger.info(f"准备启动 {len(cmds)} 个进程")
+        for i, cmd in enumerate(cmds):
+            logger.debug(f"启动第 {i+1} 个进程: {' '.join(cmd)}")
             result = self._create_and_monitor_process(cmd)
             results.append(result)
             time.sleep(1)
 
-        if any(p["status"] == "started" for p in results):
+        success_count = sum(1 for p in results if p["status"] == "started")
+        if success_count > 0:
+            logger.info(f"启动操作完成，成功启动 {success_count}/{len(cmds)} 个进程")
             return {"code": 0, "msg": "启动操作完成，具体状态请查看详情。", "details": results}
         else:
             self.is_running = False
+            logger.error("所有进程均启动失败")
             return {"code": 1, "msg": "所有进程均启动失败。", "details": results}
 
     def _create_and_monitor_process(self, cmd: List[str]) -> Dict[str, Any]:
@@ -57,15 +72,16 @@ class Worker:
                 errors='replace'
             )
             self.processes.append(process)
-            print(f"成功启动进程 (PID: {process.pid}) | 命令: {' '.join(cmd)}")
+            logger.info(f"成功启动进程 (PID: {process.pid})")
+            logger.debug(f"执行命令: {' '.join(cmd)}")
             
             threading.Thread(target=self._monitor, args=(process, cmd), daemon=True).start()
             
             return {"cmd": ' '.join(cmd), "status": "started", "pid": process.pid}
         
         except Exception as e:
-            error_msg = f"启动失败 | 命令: '{' '.join(cmd)}' | 错误: {e}"
-            print(error_msg)
+            error_msg = f"启动失败: {e}"
+            logger.error(f"命令执行失败: {' '.join(cmd)} - {error_msg}")
             return {"cmd": ' '.join(cmd), "status": "failed", "error": error_msg}
 
     def _monitor(self, process: subprocess.Popen, cmd: List[str]):
@@ -74,59 +90,82 @@ class Worker:
         这个线程会随进程的结束而自动停止.
         """
         cmd_str = ' '.join(cmd)
+        logger.debug(f"开始监控进程 {process.pid}")
+        
         while self.is_running and process.poll() is None:
             try:
                 line = process.stdout.readline()
                 if line:
                     output = f"[{cmd_str} (PID:{process.pid})]: {line.strip()}"
                     self.output_queue.put(output)
-                    print(output)
+                    logger.debug(f"进程输出: {output}")
                 else:
                     break
             except Exception as e:
-                print(f"读取进程 {process.pid} 的输出时发生错误: {e}")
+                logger.error(f"读取进程 {process.pid} 的输出时发生错误: {e}")
                 break
         
         # 进程结束后，做最后的检查，确保所有输出都被读取
-        for line in process.stdout.readlines():
-            output = f"[{cmd_str} (PID:{process.pid})]: {line.strip()}"
-            self.output_queue.put(output)
-            print(output)
+        try:
+            for line in process.stdout.readlines():
+                output = f"[{cmd_str} (PID:{process.pid})]: {line.strip()}"
+                self.output_queue.put(output)
+                logger.debug(f"进程最终输出: {output}")
+        except Exception as e:
+            logger.warning(f"读取进程 {process.pid} 最终输出时出错: {e}")
             
-        print(f"进程 {process.pid} 的监控已停止.")
+        logger.info(f"进程 {process.pid} 的监控已停止")
     
     def get_outputs(self) -> List[str]:
         """获取所有进程合并后的输出"""
         outputs = []
         while not self.output_queue.empty():
             outputs.append(self.output_queue.get_nowait())
+        
+        if outputs:
+            logger.debug(f"返回 {len(outputs)} 条输出信息")
         return outputs
 
     def stop_devices(self) -> Dict[str, str]:
         """
         停止所有由这个worker启动的子进程.
         """
-        print("正在停止所有运行中的进程...")
+        if not self.processes:
+            logger.info("没有运行中的进程需要停止")
+            return {"code": 0, "msg": "没有运行中的进程"}
+            
+        logger.info(f"正在停止 {len(self.processes)} 个运行中的进程...")
         self.is_running = False
 
+        stopped_count = 0
         for process in self.processes:
             if process.poll() is None:
                 try:
                     process.terminate()
                     process.wait(timeout=2)
-                    print(f"已终止进程 PID: {process.pid}")
+                    logger.info(f"已正常终止进程 PID: {process.pid}")
+                    stopped_count += 1
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    print(f"已强制杀死进程 PID: {process.pid}")
+                    logger.warning(f"已强制杀死进程 PID: {process.pid}")
+                    stopped_count += 1
                 except Exception as e:
-                    print(f"停止进程 PID {process.pid} 时出错: {e}")
+                    logger.error(f"停止进程 PID {process.pid} 时出错: {e}")
+            else:
+                logger.debug(f"进程 PID {process.pid} 已经结束")
 
         self.processes.clear()
+        
+        # 清空输出队列
+        queue_size = self.output_queue.qsize()
         while not self.output_queue.empty():
             self.output_queue.get_nowait()
             
-        print("所有进程已停止.")
-        return {"code": 0, "msg": "所有进程已停止"}
+        if queue_size > 0:
+            logger.debug(f"已清空 {queue_size} 条队列输出")
+            
+        logger.info(f"已停止 {stopped_count} 个进程")
+        return {"code": 0, "msg": f"已停止 {stopped_count} 个进程"}
 
     def take_photo(self):
         """
@@ -140,11 +179,18 @@ class Worker:
 
 if __name__ == '__main__':
     worker = Worker()
-    server = SimpleXMLRPCServer(('0.0.0.0', port),logRequests=False)
+    server = SimpleXMLRPCServer(('0.0.0.0', port), logRequests=False)
     server.register_instance(worker)
-    print(f"Worker启动在端口 {port}")
+    
+    logger.info(f"Worker服务启动在端口 {port}")
+    logger.info("等待来自master的连接...")
+    
     try:
         server.serve_forever()
     except KeyboardInterrupt:
+        logger.info("收到中断信号，正在停止服务...")
         worker.stop_devices()
-        print("\nWorker服务已停止")
+        logger.info("Worker服务已停止")
+    except Exception as e:
+        logger.error(f"服务运行出错: {e}")
+        worker.stop_devices()

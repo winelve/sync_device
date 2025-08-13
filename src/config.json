@@ -1,0 +1,40 @@
+{
+  "recording": {
+    "mode": "sync",
+    "duration": 10,
+    "standalone_delay": 0,
+    "sync_delay": 0.86,
+    "is_local_debug": true
+  },
+  "kinect": {
+    "--device": 1,
+    "-l": 10,
+    "-c": "720p",
+    "-r": 15,
+    "--imu": "OFF",
+    "--sync-delay": 200,
+    "-e": 1,
+    "--ip-devices": {
+      "127.0.0.1": [
+        0,
+        2,
+        3
+      ]
+    },
+    "output": {}
+  },
+  "audio": {
+    "format": 8,
+    "channels": 1,
+    "rate": 44100,
+    "is_input": true,
+    "input_device_index": [
+      1
+    ],
+    "frames_per_buffer": 1024,
+    "mode": "timing",
+    "timing": 10,
+    "outpath": "",
+    "filename": ""
+  }
+}
