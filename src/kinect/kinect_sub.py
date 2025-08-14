@@ -45,7 +45,8 @@ class Worker:
             logger.debug(f"启动第 {i+1} 个进程: {' '.join(cmd)}")
             result = self._create_and_monitor_process(cmd)
             results.append(result)
-            time.sleep(1)
+            #--------这里非常重要, 设备不能启动一下同时启动,否则会初始化失败------
+            time.sleep(1) 
 
         success_count = sum(1 for p in results if p["status"] == "started")
         if success_count > 0:

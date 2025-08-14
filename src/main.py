@@ -233,7 +233,7 @@ if __name__ == '__main__':
         controller = DeviceCtlSys(
             config_manager=config_manager,
             # 可以在这里覆盖配置文件中的设置
-            mode='sync',  # 取消注释以覆盖配置文件中的模式
+            # mode='sync',  # 取消注释以覆盖配置文件中的模式
             # is_local_debug=False,  # 取消注释以覆盖配置文件中的设置
         )
         controller.start_recording()

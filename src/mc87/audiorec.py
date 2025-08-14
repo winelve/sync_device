@@ -23,11 +23,11 @@ _default_config = {
     "channels": 1, #通道数量
     "rate": 44100, #每秒录制的样本数量
     "is_input": True, #是否是输入设备
-    "input_device_index": [1], #输入设备
+    "input_device_index": [2], #输入设备
     "frames_per_buffer": 1024, #每帧的样本数
     "mode": "timing", # timing(定时) 和 manual(自动)
     "timing": 5,
-    "outpath": "./"
+    "outpath": "./output/audio"
 }
 
 class AudioRecorder:
@@ -294,11 +294,10 @@ def format_device_info(device_info, indent=2, tip: str = "设备") -> str:
 
 
 if __name__ == '__main__':
-    # 设置日志级别为DEBUG以显示详细信息
     logging.getLogger().setLevel(logging.DEBUG)
     
     recorder = AudioRecorder()  # 使用默认配置
-    # logger.info("=== 音频设备列表 ===")
-    # recorder.show_devices()
+    logger.info("=== 音频设备列表 ===")
+    recorder.show_devices()
     # logger.info("=== 音频设备列表结束 ===")
-    recorder.record_multi_devices()  # 取消注释以测试录制
+    # recorder.record_multi_devices()  # 取消注释以测试录制

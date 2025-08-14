@@ -9,26 +9,22 @@
     "timestamp_format": "%Y-%m-%d_%H-%M-%S"
   },
   "kinect": {
-    "--device": 1,
+    "--device": 0,
     "-c": "720p",
     "-d": "NFOV_UNBINNED",
     "--depth-delay": 0,
     "-r": 15,
     "--imu": "OFF",
     "--sync-delay": 200,
-    "-e": 1,
+    "-e": 0,
     "--ip-devices": {
       "127.0.0.1": [
-        0,
-        2,
-        3
+        1
       ]
     },
     "device_names": {
       "127.0.0.1": {
-        "0": "master_cam",
-        "2": "left_cam",
-        "3": "right_cam"
+        "1": "blank"
       },
       "local": {
         "1": "standalone_cam"
@@ -46,7 +42,7 @@
     "frames_per_buffer": 1024,
     "mode": "timing",
     "device_names": {
-      "1": "main_mic",
+      "2": "sys",
       "5": "backup_mic",
       "6": "wireless_mic"
     }
