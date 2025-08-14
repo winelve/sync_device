@@ -16,7 +16,7 @@ except ImportError:
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%H:%M:%S'
 )
@@ -254,7 +254,7 @@ class KinectMaster:
         
     def wait_for_subprocess(self):
         """等待子进程完成"""
-        logger.info("等待录制进程完成...")
+        logger.info("等待录制进程...")
         while True:
             if self.process and self.process.poll() is not None:
                 logger.info("录制进程已完成")
@@ -421,6 +421,7 @@ def test_standalone(config):
     
     try:
         ensure_output_path(config["output"]["standalone"])
+        # ----------这两个函数一定要同时使用----------
         master.start_standalone(config)
         master.wait_for_subprocess()
     except Exception as e:
