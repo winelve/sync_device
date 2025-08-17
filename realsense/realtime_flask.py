@@ -58,7 +58,13 @@ def capture_loop(multi: MultiRealSense, merged: bool, capture_interval_s: float)
                 if merged and latest_front is not None and latest_right is not None:
                     latest_pcd = np.vstack([latest_front, latest_right])
                 else:
-                    latest_pcd = latest_front or latest_right
+                    # Single-camera (or only one side available) fallback without ambiguous numpy truth-value
+                    if latest_front is not None:
+                        latest_pcd = latest_front
+                    elif latest_right is not None:
+                        latest_pcd = latest_right
+                    else:
+                        latest_pcd = None
         except Exception as e:
             # Log once per loop iteration; keep running
             print(f"[capture_loop] error: {e}")
