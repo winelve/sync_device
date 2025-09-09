@@ -3,12 +3,12 @@ import time
 import logging
 
 try:
-    from .kinect.kinect_record_master import KinectMaster
+    from .camera.kinect_record_master import KinectMaster
     from .mc87.audiorec import AudioRecorder
     from .utils.config import get_config_manager
     from .utils.naming import NamingManager
 except ImportError:
-    from kinect.kinect_record_master import KinectMaster
+    from camera.kinect_record_master import KinectMaster
     from mc87.audiorec import AudioRecorder
     from utils.config import get_config_manager
     from utils.naming import NamingManager
