@@ -1,0 +1,17 @@
+{
+    "detection": {
+        "sensitivity": 0.3
+    },
+    "cutting": {
+        "reencode": false,
+        "output_suffix": "_synced"
+    },
+    "output": {
+        "output_dir": "./synchronized_videos"
+    },
+    "visualization": {
+        "enable": false,
+        "save_plot": true,
+        "plot_dir": "./synchronized_videos"
+    }
+}
