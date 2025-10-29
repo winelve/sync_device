@@ -4,14 +4,17 @@ import logging
 
 try:
     from .camera.kinect_record_master import KinectMaster
+    from .camera.realsense.realsense_record import RealSenseRecorder
     from .mc87.audiorec import AudioRecorder
     from .utils.config import get_config_manager
     from .utils.naming import NamingManager
 except ImportError:
     from camera.kinect_record_master import KinectMaster
+    from camera.realsense.realsense_record import RealSenseRecorder
     from mc87.audiorec import AudioRecorder
     from utils.config import get_config_manager
     from utils.naming import NamingManager
+
 
 # 配置日志
 logging.basicConfig(
@@ -51,6 +54,7 @@ class DeviceCtlSys:
         # 初始化设备
         self.kinect_master = KinectMaster(naming_manager=self.naming_manager)
         self.audio_recorder = AudioRecorder(config=self.audio_config)
+        self.realsense_recorder = RealSenseRecorder(width=800, height=600, fps=15, output_dir="./recordings/test")
 
         self.threads = []
 
@@ -144,6 +148,10 @@ class DeviceCtlSys:
         # 音频线程
         audio_thread = threading.Thread(target=self._audio_task)
         self.threads.append(audio_thread)
+        
+        # realsense 录制线程
+        realsense_thread = threading.Thread(target=self._realsense_task)
+        self.threads.append(realsense_thread)
 
         # 启动所有线程
         kinect_thread.start()
@@ -171,6 +179,10 @@ class DeviceCtlSys:
         # 音频线程
         audio_thread = threading.Thread(target=self._audio_task)
         self.threads.append(audio_thread)
+        
+        # realsense 录制线程
+        realsense_thread = threading.Thread(target=self._realsense_task)
+        self.threads.append(realsense_thread)
         
         # 启动线程
         kinect_thread.start()
@@ -215,6 +227,12 @@ class DeviceCtlSys:
             logger.error(f"音频录制任务出错: {e}")
         finally:
             self.audio_recorder.close_audio()
+            
+    def _realsense_task(self):
+        try:
+            self.realsense_recorder.start_recording(duration=10, filename="realsense.bat")
+        except Exception as e:
+            print(e)
 
 
 if __name__ == '__main__':

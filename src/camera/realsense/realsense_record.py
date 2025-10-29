@@ -267,6 +267,7 @@ if __name__ == "__main__":
     print("检测 RealSense 设备...")
     devices = RealSenseRecorder.list_devices()
     
+    print(devices)
     if not devices:
         print("未检测到 RealSense 设备")
         exit(1)
